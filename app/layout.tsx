@@ -16,8 +16,8 @@ const notoSansJP = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "Carbey Portal",
-  description: "カーベイ FC 加盟店プラットフォーム",
+  title: "カーベイホームディーラー",
+  description: "カーベイホームディーラー 加盟店プラットフォーム",
   icons: {
     icon: "/logo-icon.png",
     apple: "/logo-icon.png",

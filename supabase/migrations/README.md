@@ -14,7 +14,8 @@ Supabase SQL エディタに順に貼り付けて実行する（または Supaba
 ### ロール / プラン / ステータス (新スペック)
 
 - ロール (要求書 5.1): `admin`（管理者・本部）/ `member`（加盟店）/ `crm_staff`（CRM入力担当）/ `chat_only`（チャット専用）
-- プラン (要求書 4.2): `home_dealer` / `economy` / `bronze` / `platinum` / `gold`
+- プラン (要求書 4.2): `home_dealer`（表示名「セミオート」/ 半自動）/ `economy` / `bronze` / `platinum` / `gold`（全自動4ランク）
+  - ※ サービス名「カーベイホームディーラー」と区別するため、半自動プランの表示名は `003_rename_semi_auto_plan.sql` で「セミオート」に変更（code は維持）。
 - 会員ステータス: `pending` / `active` / `suspended` / `cancelled`
 
 ## ⚠️ 重要: PostgREST に portal スキーマを公開する

@@ -2,11 +2,11 @@ import Logo from '@/components/Logo'
 import { cn } from '@/lib/cn'
 
 /**
- * CARBAY FC ロゴタイプ。アイコン + 「CARBAY」+ 赤い「FC」+ サブタイトル。
+ * CARBAY Home Dealer ロゴタイプ。アイコン + 「CARBAY」+ 赤い「Home Dealer」+ サブタイトル。
  * デザインカンプ準拠。
  */
 export default function Wordmark({
-  subtitle = '加盟店プラットフォーム',
+  subtitle = 'カーベイホームディーラー',
   theme = 'light',
   size = 'md',
   className,
@@ -27,7 +27,7 @@ export default function Wordmark({
       <div className="leading-tight">
         <div className={cn('font-extrabold tracking-tight', textSize)}>
           <span className={carbayColor}>CARBAY</span>{' '}
-          <span className="text-brand-500">FC</span>
+          <span className="text-brand-500">Home Dealer</span>
         </div>
         {subtitle && <div className={cn('text-[11px] font-medium', subColor)}>{subtitle}</div>}
       </div>

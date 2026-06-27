@@ -51,7 +51,7 @@ export default function RegisterPage() {
       <div className="relative hidden w-1/2 overflow-hidden bg-navy-900 lg:block">
         <Image
           src="/login-hero.png"
-          alt="CARBAY FC — データとAIで、中古車ビジネスを次のステージへ。"
+          alt="CARBAY Home Dealer — データとAIで、中古車ビジネスを次のステージへ。"
           fill
           priority
           sizes="50vw"
