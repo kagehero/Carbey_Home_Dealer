@@ -57,7 +57,7 @@ create trigger trg_portal_plans_touch
 
 -- 要求書 4.2 準拠: 半自動(ホームディーラー) + 全自動4ランク(エコノミー/ブロンズ/プラチナ/ゴールド)
 insert into portal.plans (code, name, plan_type, monthly_fee_yen, joining_fee_yen, display_order, description) values
-  ('home_dealer', 'カーベイホームディーラー (半自動)', 'semi_auto', 10000, 0, 0, '加盟者自身が車両選定・仕入れ判断・販売活動を主体的に行う半自動プラン'),
+  ('home_dealer', 'セミオート', 'semi_auto', 10000, 0, 0, '加盟者自身が車両選定・仕入れ判断・販売活動を主体的に行う半自動プラン（セミオート）'),
   ('economy',     'エコノミー', 'full_auto', 10000, 0, 1, 'エントリー最下位モデル。全自動プランの入門ランク'),
   ('bronze',      'ブロンズ',   'full_auto', 20000, 0, 2, '中位プラン。料金設定で優位性ありの最安値帯。自動売買機能に一部制限あり'),
   ('platinum',    'プラチナ',   'full_auto', 30000, 0, 3, '上位プラン。料金設定で優位性あり'),

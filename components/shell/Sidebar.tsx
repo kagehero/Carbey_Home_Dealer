@@ -163,7 +163,7 @@ export default function Sidebar({
         <Logo variant="icon" className="h-8 w-8 rounded-lg" priority />
         <div className="leading-tight">
           <div className="text-[14px] font-bold text-white">
-            CARBAY <span className="text-brand-400">FC</span>
+            CARBAY <span className="text-brand-400">Home Dealer</span>
           </div>
           <div className="text-[10px] text-slate-400">{brandLabel}</div>
         </div>
