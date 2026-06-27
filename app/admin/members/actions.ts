@@ -1,0 +1,102 @@
+'use server'
+
+import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
+import { requireFeature } from '@/lib/auth/session'
+import { createMember, updateMember, getMember } from '@/lib/portal/members'
+import { notifyAdmin } from '@/lib/portal/notifications'
+import { inviteMember } from '@/lib/portal/invite'
+import { isSmtpConfigured } from '@/lib/email/sendEmail'
+import type { MemberStatus, PaymentStatus } from '@/types/database'
+
+function str(v: FormDataEntryValue | null): string | null {
+  const s = typeof v === 'string' ? v.trim() : ''
+  return s === '' ? null : s
+}
+function num(v: FormDataEntryValue | null): number | null {
+  const s = str(v)
+  return s == null ? null : Number(s)
+}
+
+export async function createMemberAction(formData: FormData) {
+  await requireFeature('members')
+  const member_name = str(formData.get('member_name'))
+  if (!member_name) redirect('/admin/members/new?error=name_required')
+
+  const m = await createMember({
+    member_name,
+    company_name: str(formData.get('company_name')),
+    email: str(formData.get('email')),
+    phone_mobile: str(formData.get('phone_mobile')),
+    phone_landline: str(formData.get('phone_landline')),
+    address: str(formData.get('address')),
+    delivery_name: str(formData.get('delivery_name')),
+    delivery_address: str(formData.get('delivery_address')),
+    delivery_contact: str(formData.get('delivery_contact')),
+    plan_id: str(formData.get('plan_id')),
+    contract_date: str(formData.get('contract_date')),
+    status: (str(formData.get('status')) ?? 'pending') as MemberStatus,
+    joining_fee_yen: num(formData.get('joining_fee_yen')),
+    monthly_fee_yen: num(formData.get('monthly_fee_yen')),
+    working_capital_yen: num(formData.get('working_capital_yen')),
+    admin_notes: str(formData.get('admin_notes')),
+  })
+
+  await notifyAdmin('member_registered', '新規会員登録', `${member_name} を登録しました`)
+  revalidatePath('/admin/members')
+  redirect(`/admin/members/${m.id}`)
+}
+
+export async function updateMemberAction(formData: FormData) {
+  await requireFeature('members')
+  const id = str(formData.get('id'))
+  if (!id) redirect('/admin/members')
+
+  await updateMember(id, {
+    member_name: str(formData.get('member_name')) ?? undefined,
+    company_name: str(formData.get('company_name')),
+    email: str(formData.get('email')),
+    phone_mobile: str(formData.get('phone_mobile')),
+    phone_landline: str(formData.get('phone_landline')),
+    address: str(formData.get('address')),
+    delivery_name: str(formData.get('delivery_name')),
+    delivery_address: str(formData.get('delivery_address')),
+    delivery_contact: str(formData.get('delivery_contact')),
+    plan_id: str(formData.get('plan_id')),
+    contract_date: str(formData.get('contract_date')),
+    status: (str(formData.get('status')) ?? undefined) as MemberStatus | undefined,
+    payment_status: (str(formData.get('payment_status')) ?? undefined) as PaymentStatus | undefined,
+    joining_fee_yen: num(formData.get('joining_fee_yen')),
+    monthly_fee_yen: num(formData.get('monthly_fee_yen')),
+    working_capital_yen: num(formData.get('working_capital_yen')),
+    admin_notes: str(formData.get('admin_notes')),
+  })
+
+  revalidatePath(`/admin/members/${id}`)
+  redirect(`/admin/members/${id}`)
+}
+
+/** 加盟店に招待メールを送る (要求書 5.1: メール+パスワード認証 / 招待フロー)。 */
+export async function inviteMemberAction(formData: FormData) {
+  await requireFeature('members')
+  const id = str(formData.get('id'))
+  if (!id) redirect('/admin/members')
+
+  if (!isSmtpConfigured()) {
+    redirect(`/admin/members/${id}?invite=smtp_unconfigured`)
+  }
+
+  const member = await getMember(id)
+  if (!member) redirect('/admin/members')
+
+  try {
+    await inviteMember(member)
+    await notifyAdmin('member_registered', '招待メール送信', `${member.member_name} を招待しました`)
+    revalidatePath(`/admin/members/${id}`)
+    redirect(`/admin/members/${id}?invite=sent`)
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e
+    const msg = e instanceof Error ? e.message : 'unknown'
+    redirect(`/admin/members/${id}?invite=error&msg=${encodeURIComponent(msg)}`)
+  }
+}
