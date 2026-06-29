@@ -174,6 +174,22 @@ export type NotificationRow = {
   created_at: string
 }
 
+export type OnboardingTaskStatus = 'todo' | 'in_progress' | 'done'
+
+export type OnboardingTaskRow = {
+  id: string
+  member_id: string
+  step_key: string
+  step_label: string
+  title: string
+  status: OnboardingTaskStatus
+  sort_order: number
+  due_date: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   portal: {
     Tables: {
@@ -186,6 +202,7 @@ export type Database = {
       crm_deals: { Row: CrmDealRow; Insert: CrmDealInsert; Update: Partial<CrmDealInsert> }
       crm_deal_notes: { Row: CrmDealNoteRow; Insert: Partial<CrmDealNoteRow>; Update: Partial<CrmDealNoteRow> }
       notifications: { Row: NotificationRow; Insert: Partial<NotificationRow>; Update: Partial<NotificationRow> }
+      onboarding_tasks: { Row: OnboardingTaskRow; Insert: Partial<OnboardingTaskRow>; Update: Partial<OnboardingTaskRow> }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

@@ -9,6 +9,7 @@ export default async function PortalLayout({ children }: { children: React.React
   // 加盟店向けナビ (要求書 5.4 加盟店ダッシュボード周辺)。Phase2-4 は soon。
   const primary: NavEntry[] = [
     { href: '/portal/dashboard', label: 'ダッシュボード', icon: 'dashboard' },
+    { href: '/portal/onboarding', label: 'スタートアップ', icon: 'onboarding' },
     { href: '/portal/vehicles', label: '車両進捗', icon: 'vehicle', soon: true },
     { href: '/portal/orders', label: '仕入れオーダー', icon: 'order', soon: true },
     { href: '/portal/reports', label: '販売実績', icon: 'report', soon: true },

@@ -18,7 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     primary.push({ href: '/admin/members', label: '加盟店管理', icon: 'store' })
     primary.push({ href: '/admin/contracts', label: '契約管理', icon: 'contract', soon: true })
     primary.push({ href: '/admin/billing', label: '請求・入金管理', icon: 'billing', soon: true })
-    primary.push({ href: '/admin/onboarding', label: 'オンボーディング管理', icon: 'onboarding', soon: true })
+    primary.push({ href: '/admin/onboarding', label: 'オンボーディング管理', icon: 'onboarding' })
   }
   primary.push({ href: '/admin/vehicles', label: '車両進捗管理', icon: 'vehicle', soon: true })
   primary.push({ href: '/admin/orders', label: 'オーダー管理', icon: 'order', soon: true })
