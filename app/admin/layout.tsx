@@ -21,10 +21,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     primary.push({ href: '/admin/onboarding', label: 'オンボーディング管理', icon: 'onboarding' })
   }
   primary.push({ href: '/admin/vehicles', label: '車両進捗管理', icon: 'vehicle', soon: true })
-  primary.push({ href: '/admin/orders', label: 'オーダー管理', icon: 'order', soon: true })
+  primary.push({ href: '/admin/orders', label: 'オーダー管理', icon: 'order' })
   primary.push({ href: '/admin/sales', label: '販売実績管理', icon: 'sales', soon: true })
   primary.push({ href: '/admin/ai', label: 'AI分析・壁打ち', icon: 'ai', soon: true })
-  primary.push({ href: '/admin/chat', label: 'チャット', icon: 'chat', badge: 31, soon: true })
+  primary.push({ href: '/admin/chat', label: 'チャット', icon: 'chat' })
   if (canAccess(session.role, 'crm')) {
     primary.push({ href: '/admin/crm', label: 'CRM', icon: 'crm' })
   }

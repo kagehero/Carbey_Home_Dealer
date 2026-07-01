@@ -11,10 +11,10 @@ export default async function PortalLayout({ children }: { children: React.React
     { href: '/portal/dashboard', label: 'ダッシュボード', icon: 'dashboard' },
     { href: '/portal/onboarding', label: 'スタートアップ', icon: 'onboarding' },
     { href: '/portal/vehicles', label: '車両進捗', icon: 'vehicle', soon: true },
-    { href: '/portal/orders', label: '仕入れオーダー', icon: 'order', soon: true },
+    { href: '/portal/orders', label: '仕入れオーダー', icon: 'order' },
     { href: '/portal/reports', label: '販売実績', icon: 'report', soon: true },
     { href: '/portal/ai', label: 'AI 壁打ち', icon: 'ai', soon: true },
-    { href: '/portal/chat', label: 'チャット', icon: 'chat', soon: true },
+    { href: '/portal/chat', label: 'チャット', icon: 'chat' },
     { href: '/portal/profile', label: 'プロフィール', icon: 'store' },
   ]
 

@@ -101,5 +101,5 @@ export async function ensureOnboardingTasks(memberId: string): Promise<void> {
     .eq('member_id', memberId)
   if ((count ?? 0) > 0) return
   // seed 関数（public ラッパー）を RPC で呼ぶ
-  await supabase.rpc('portal_seed_onboarding_tasks', { p_member_id: memberId } as never)
+  await supabase.rpc('seed_onboarding_tasks', { p_member_id: memberId } as never)
 }
