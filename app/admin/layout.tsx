@@ -63,6 +63,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           notificationsHref="/admin/notifications"
           unread={unread}
           showSearch
+          notifyScope="admin"
+          userId={session.userId}
         />
         <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>

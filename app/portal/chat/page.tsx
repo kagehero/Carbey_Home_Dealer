@@ -1,5 +1,6 @@
 import { requireMember } from '@/lib/auth/session'
 import { getOwnConversation, listMessages, markRead } from '@/lib/portal/chat'
+import { markAllUserRead } from '@/lib/portal/notifications'
 import ChatThread from '@/components/chat/ChatThread'
 
 export const dynamic = 'force-dynamic'
@@ -18,6 +19,8 @@ export default async function MemberChatPage() {
 
   const messages = await listMessages(own.conversationId)
   await markRead(own.conversationId, false)
+  // チャットを開いたら、この加盟店宛てのチャット通知を既読にする
+  await markAllUserRead(session.userId)
 
   return (
     <div className="space-y-4">

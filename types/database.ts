@@ -186,8 +186,15 @@ export type ChatMessageRow = {
   conversation_id: string
   sender_id: string | null
   sender_role: UserRole
-  body: string
+  sender_name: string | null
+  body: string | null
+  attachment_path: string | null
+  attachment_name: string | null
+  attachment_type: string | null
+  attachment_size: number | null
   read_at: string | null
+  edited_at: string | null
+  deleted_at: string | null
   created_at: string
 }
 

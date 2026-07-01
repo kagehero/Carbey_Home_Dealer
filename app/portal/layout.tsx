@@ -1,10 +1,12 @@
 import { requireMember } from '@/lib/auth/session'
 import { ROLE_LABEL } from '@/lib/portal/labels'
+import { unreadUserCount } from '@/lib/portal/notifications'
 import Sidebar, { type NavEntry } from '@/components/shell/Sidebar'
 import Topbar from '@/components/shell/Topbar'
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await requireMember()
+  const unread = await unreadUserCount(session.userId)
 
   // 加盟店向けナビ (要求書 5.4 加盟店ダッシュボード周辺)。Phase2-4 は soon。
   const primary: NavEntry[] = [
@@ -25,6 +27,10 @@ export default async function PortalLayout({ children }: { children: React.React
         <Topbar
           userName={session.name ?? session.email ?? 'ユーザー'}
           roleLabel={ROLE_LABEL[session.role]}
+          notificationsHref="/portal/chat"
+          unread={unread}
+          notifyScope="user"
+          userId={session.userId}
         />
         <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
