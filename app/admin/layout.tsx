@@ -25,6 +25,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   primary.push({ href: '/admin/sales', label: '販売実績管理', icon: 'sales', soon: true })
   primary.push({ href: '/admin/ai', label: 'AI分析・壁打ち', icon: 'ai', soon: true })
   primary.push({ href: '/admin/chat', label: 'チャット', icon: 'chat' })
+  primary.push({ href: '/admin/announcements', label: 'お知らせ配信', icon: 'announcement' })
   if (canAccess(session.role, 'crm')) {
     primary.push({ href: '/admin/crm', label: 'CRM', icon: 'crm' })
   }

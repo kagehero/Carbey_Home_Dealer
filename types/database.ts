@@ -174,6 +174,17 @@ export type NotificationRow = {
   created_at: string
 }
 
+export type AnnouncementRow = {
+  id: string
+  title: string
+  body: string
+  level: 'info' | 'important'
+  published: boolean
+  author_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type ChatConversationRow = {
   id: string
   member_id: string
@@ -249,6 +260,7 @@ export type Database = {
       orders: { Row: OrderRow; Insert: Partial<OrderRow>; Update: Partial<OrderRow> }
       chat_conversations: { Row: ChatConversationRow; Insert: Partial<ChatConversationRow>; Update: Partial<ChatConversationRow> }
       chat_messages: { Row: ChatMessageRow; Insert: Partial<ChatMessageRow>; Update: Partial<ChatMessageRow> }
+      announcements: { Row: AnnouncementRow; Insert: Partial<AnnouncementRow>; Update: Partial<AnnouncementRow> }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

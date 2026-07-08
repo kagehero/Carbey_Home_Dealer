@@ -17,6 +17,7 @@ import {
   Sparkles,
   Activity,
   BarChart3,
+  Megaphone,
   Settings,
   LifeBuoy,
   AlertTriangle,
@@ -54,6 +55,7 @@ const ICONS = {
   ai: Sparkles,
   aiUsage: Activity,
   report: BarChart3,
+  announcement: Megaphone,
   settings: Settings,
   support: LifeBuoy,
 }
