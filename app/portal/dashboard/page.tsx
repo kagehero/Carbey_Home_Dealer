@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { getMemberByUserId } from '@/lib/portal/members'
+import { listAnnouncements } from '@/lib/portal/announcements'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { StatCard } from '@/components/ui/StatCard'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
@@ -21,6 +22,7 @@ export const dynamic = 'force-dynamic'
 export default async function MemberDashboardPage() {
   const session = await requireMember()
   const member = await getMemberByUserId(session.userId)
+  const announcements = await listAnnouncements(true, 5)
 
   const onboardingPct = member?.onboarding_total
     ? Math.round((member.onboarding_done / member.onboarding_total) * 100)
@@ -86,8 +88,23 @@ export default async function MemberDashboardPage() {
         {/* お知らせ */}
         <Card>
           <CardHeader title="本部からのお知らせ" />
-          <CardBody>
-            <p className="text-sm text-slate-400">お知らせ機能は Phase 2 で実装予定です。</p>
+          <CardBody className="p-0">
+            {announcements.length === 0 ? (
+              <p className="px-5 py-8 text-center text-sm text-slate-400">お知らせはありません。</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {announcements.map((a) => (
+                  <li key={a.id} className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      {a.level === 'important' && <Badge tone="red">重要</Badge>}
+                      <span className="text-sm font-medium text-slate-900">{a.title}</span>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{a.body}</p>
+                    <div className="mt-1 text-[11px] text-slate-400">{new Date(a.created_at).toLocaleDateString('ja-JP')}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardBody>
         </Card>
       </div>
