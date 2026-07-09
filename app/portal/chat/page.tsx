@@ -25,8 +25,8 @@ export default async function MemberChatPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">チャット</h1>
-        <p className="text-sm text-slate-500">本部サポートとやり取りできます。</p>
+        <h1 className="text-xl font-bold text-white">チャット</h1>
+        <p className="text-sm text-slate-400">本部サポートとやり取りできます。</p>
       </div>
       <ChatThread
         conversationId={own.conversationId}

@@ -12,8 +12,8 @@ import {
 } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
-import { Card, CardHeader, CardBody } from '@/components/ui/Card'
-import { DonutChart } from '@/components/charts/MiniCharts'
+import { DarkCard as Card, DarkCardHeader as CardHeader, DarkCardBody as CardBody } from '@/components/portal-dark/DarkUI'
+import { DarkDonut } from '@/components/portal-dark/DarkCharts'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,9 +32,9 @@ const STEP_ICON: Record<string, React.ReactNode> = {
 }
 
 const STATUS_META = {
-  done: { ring: 'bg-emerald-500 text-white', badge: 'bg-emerald-50 text-emerald-700', label: '完了' },
-  current: { ring: 'bg-brand-500 text-white ring-4 ring-brand-100', badge: 'bg-brand-50 text-brand-700', label: '進行中' },
-  todo: { ring: 'bg-slate-200 text-slate-400', badge: 'bg-slate-100 text-slate-500', label: '未着手' },
+  done: { ring: 'bg-brand-500 text-white', badge: 'bg-brand-500/15 text-brand-400', label: '完了' },
+  current: { ring: 'border-2 border-brand-500 bg-brand-500/15 text-brand-400', badge: 'bg-brand-500/15 text-brand-400', label: '進行中' },
+  todo: { ring: 'border-2 border-carbon-600 bg-carbon-800 text-slate-500', badge: 'bg-carbon-700 text-slate-500', label: '未着手' },
 } as const
 
 export default async function OnboardingPage() {
@@ -55,9 +55,9 @@ export default async function OnboardingPage() {
   return (
     <div className="space-y-6">
       {/* ===== ヒーロー（未来的背景・ログイン画面と統一） ===== */}
-      <div className="relative overflow-hidden rounded-2xl bg-navy-900 text-white">
-        <Image src="/login-hero.png" alt="" fill priority sizes="100vw" className="object-cover object-right opacity-30" />
-        <div className="absolute inset-0 bg-gradient-to-r from-navy-900 via-navy-900/90 to-transparent" />
+      <div className="relative overflow-hidden rounded-2xl border border-carbon-700 bg-carbon-900 text-white">
+        <Image src="/login-hero.png" alt="" fill priority sizes="100vw" className="object-cover object-right opacity-40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-carbon-950 via-carbon-950/85 to-transparent" />
         <div className="relative flex flex-col gap-6 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
           <div className="max-w-lg">
             <p className="text-xs font-semibold uppercase tracking-widest text-brand-400">Onboarding</p>
@@ -89,7 +89,7 @@ export default async function OnboardingPage() {
         <Card className="lg:col-span-2">
           <CardHeader title="スタートアップ ステップ" action={<span className="text-xs text-slate-400">全 {view.steps.length} ステップ</span>} />
           <CardBody>
-            <ol className="relative space-y-6 before:absolute before:left-[18px] before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-slate-200">
+            <ol className="relative space-y-6 before:absolute before:left-[18px] before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-carbon-700">
               {view.steps.map((step, i) => {
                 const meta = STATUS_META[step.status]
                 return (
@@ -97,25 +97,25 @@ export default async function OnboardingPage() {
                     <span className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${meta.ring}`}>
                       {step.status === 'done' ? <CheckCircle2 className="h-5 w-5" /> : STEP_ICON[step.key] ?? <Circle className="h-5 w-5" />}
                     </span>
-                    <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex-1 rounded-xl border border-carbon-700 bg-carbon-800/50 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-semibold text-slate-400">STEP {i + 1}</span>
+                            <span className="text-[11px] font-semibold text-slate-500">STEP {i + 1}</span>
                             <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${meta.badge}`}>{meta.label}</span>
                           </div>
-                          <h3 className="mt-0.5 text-sm font-bold text-slate-900">{step.label}</h3>
+                          <h3 className="mt-0.5 text-sm font-bold text-white">{step.label}</h3>
                         </div>
-                        <span className="shrink-0 text-xs font-medium text-slate-400">{step.done}/{step.total}</span>
+                        <span className="shrink-0 text-xs font-medium text-slate-500">{step.done}/{step.total}</span>
                       </div>
                       <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                         {step.tasks.map((t) => (
-                          <li key={t.id} className={`flex items-center gap-1.5 text-xs ${t.status === 'done' ? 'text-slate-700' : 'text-slate-400'}`}>
+                          <li key={t.id} className={`flex items-center gap-1.5 text-xs ${t.status === 'done' ? 'text-slate-300' : 'text-slate-500'}`}>
                             {t.status === 'done'
-                              ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                              ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-brand-400" />
                               : t.status === 'in_progress'
-                                ? <Loader2 className="h-3.5 w-3.5 shrink-0 text-brand-500" />
-                                : <Circle className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
+                                ? <Loader2 className="h-3.5 w-3.5 shrink-0 text-brand-400" />
+                                : <Circle className="h-3.5 w-3.5 shrink-0 text-slate-600" />}
                             {t.title}
                           </li>
                         ))}
@@ -132,14 +132,14 @@ export default async function OnboardingPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader title="ステップ別の状況" />
-            <CardBody>
-              <DonutChart
-                centerLabel="進捗"
-                centerValue={`${view.pct}%`}
+            <CardBody className="flex justify-center">
+              <DarkDonut
+                centerTop="進捗"
+                centerMain={`${view.pct}%`}
                 slices={[
-                  { label: '完了', value: view.steps.filter((s) => s.status === 'done').length, color: '#10b981' },
-                  { label: '進行中', value: view.steps.filter((s) => s.status === 'current').length, color: '#fb2c1d' },
-                  { label: '未着手', value: view.steps.filter((s) => s.status === 'todo').length, color: '#cbd5e1' },
+                  { label: '完了', value: view.steps.filter((s) => s.status === 'done').length, color: '#f5362b' },
+                  { label: '進行中', value: view.steps.filter((s) => s.status === 'current').length, color: '#f59e0b' },
+                  { label: '未着手', value: view.steps.filter((s) => s.status === 'todo').length, color: '#334155' },
                 ]}
               />
             </CardBody>
@@ -153,18 +153,18 @@ export default async function OnboardingPage() {
                 { label: 'AI 壁打ち', icon: <GraduationCap className="h-4 w-4" /> },
                 { label: '販売実績の登録', icon: <FileText className="h-4 w-4" /> },
               ].map((f) => (
-                <div key={f.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                  <span className="flex items-center gap-2 text-sm text-slate-600">
-                    <span className="text-slate-400">{f.icon}</span>
+                <div key={f.label} className="flex items-center justify-between rounded-lg border border-carbon-700 bg-carbon-800/40 px-3 py-2">
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="text-slate-500">{f.icon}</span>
                     {f.label}
                   </span>
-                  {view.pct >= 100 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Lock className="h-3.5 w-3.5 text-slate-300" />}
+                  {view.pct >= 100 ? <CheckCircle2 className="h-3.5 w-3.5 text-brand-400" /> : <Lock className="h-3.5 w-3.5 text-slate-600" />}
                 </div>
               ))}
             </CardBody>
           </Card>
 
-          <p className="px-1 text-xs text-slate-400">
+          <p className="px-1 text-xs text-slate-500">
             ※ 各ステップの完了は本部が確認・更新します。ご不明点はチャットまたはサポートへ。
           </p>
         </div>

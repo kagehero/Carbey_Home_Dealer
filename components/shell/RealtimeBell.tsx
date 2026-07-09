@@ -15,12 +15,14 @@ export default function RealtimeBell({
   initialUnread,
   scope,
   userId,
+  variant = 'light',
 }: {
   href: string
   initialUnread: number
   /** 'admin' = audience='admin' を購読 / 'user' = user_id=自分 を購読 */
   scope: 'admin' | 'user'
   userId: string
+  variant?: 'light' | 'dark'
 }) {
   const [unread, setUnread] = useState(initialUnread)
 
@@ -66,7 +68,15 @@ export default function RealtimeBell({
   }, [scope])
 
   return (
-    <Link href={href} className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="通知">
+    <Link
+      href={href}
+      className={
+        variant === 'dark'
+          ? 'relative rounded-lg p-2 text-slate-300 hover:bg-white/5'
+          : 'relative rounded-lg p-2 text-slate-500 hover:bg-slate-100'
+      }
+      aria-label="通知"
+    >
       <Bell className="h-5 w-5" />
       {unread > 0 && (
         <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-500 px-1 text-[10px] font-semibold text-white">

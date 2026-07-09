@@ -1,38 +1,51 @@
 import { requireMember } from '@/lib/auth/session'
-import { ROLE_LABEL } from '@/lib/portal/labels'
+import { getMemberByUserId } from '@/lib/portal/members'
 import { unreadUserCount } from '@/lib/portal/notifications'
-import Sidebar, { type NavEntry } from '@/components/shell/Sidebar'
-import Topbar from '@/components/shell/Topbar'
+import { MEMBER_STATUS_LABEL } from '@/lib/portal/labels'
+import PortalSidebar, { type PortalNavEntry } from '@/components/portal-dark/PortalSidebar'
+import PortalTopbar from '@/components/portal-dark/PortalTopbar'
+import type { MemberStatus } from '@/types/database'
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await requireMember()
-  const unread = await unreadUserCount(session.userId)
+  const [member, unread] = await Promise.all([
+    getMemberByUserId(session.userId),
+    unreadUserCount(session.userId),
+  ])
 
-  // 加盟店向けナビ (要求書 5.4 加盟店ダッシュボード周辺)。Phase2-4 は soon。
-  const primary: NavEntry[] = [
+  // カンプ準拠のナビ。Phase 3/4 の未実装は soon。
+  const nav: PortalNavEntry[] = [
+    { href: '/portal/onboarding', label: 'オンボーディング', icon: 'onboarding' },
     { href: '/portal/dashboard', label: 'ダッシュボード', icon: 'dashboard' },
-    { href: '/portal/onboarding', label: 'スタートアップ', icon: 'onboarding' },
-    { href: '/portal/vehicles', label: '車両進捗', icon: 'vehicle', soon: true },
-    { href: '/portal/orders', label: '仕入れオーダー', icon: 'order' },
-    { href: '/portal/reports', label: '販売実績', icon: 'report', soon: true },
-    { href: '/portal/ai', label: 'AI 壁打ち', icon: 'ai', soon: true },
+    { href: '/portal/vehicles', label: '車両管理', icon: 'vehicle', soon: true },
+    { href: '/portal/orders', label: 'オーダー管理', icon: 'order' },
+    { href: '/portal/ai', label: 'AI分析・相場', icon: 'ai', soon: true },
+    { href: '/portal/reports', label: 'レポート', icon: 'report', soon: true },
     { href: '/portal/chat', label: 'チャット', icon: 'chat' },
-    { href: '/portal/profile', label: 'プロフィール', icon: 'store' },
+    { href: '/portal/announcements', label: 'お知らせ', icon: 'announce', badge: unread },
+    { href: '/portal/profile', label: '設定', icon: 'settings' },
   ]
 
+  const plan = {
+    name: member?.plan?.name ?? '未設定',
+    status: member ? MEMBER_STATUS_LABEL[member.status as MemberStatus] : '—',
+    contractFrom: member?.contract_date ?? member?.registration_date ?? null,
+  }
+
+  // 加盟店ID表示（member.id から短縮コード）
+  const memberCode = member ? `HD-${member.id.replace(/-/g, '').slice(0, 8).toUpperCase()}` : '—'
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Sidebar brandLabel="加盟店" primary={primary} />
+    <div className="hud-grid min-h-screen bg-carbon-950 text-slate-200 on-dark">
+      <PortalSidebar nav={nav} plan={plan} />
       <div className="lg:pl-64">
-        <Topbar
+        <PortalTopbar
           userName={session.name ?? session.email ?? 'ユーザー'}
-          roleLabel={ROLE_LABEL[session.role]}
-          notificationsHref="/portal/chat"
-          unread={unread}
-          notifyScope="user"
+          memberCode={memberCode}
           userId={session.userId}
+          unread={unread}
         />
-        <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   )
