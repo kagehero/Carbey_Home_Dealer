@@ -209,6 +209,20 @@ export type ChatMessageRow = {
   created_at: string
 }
 
+export type FundingMethod = 'self' | 'loan'
+
+export type FundingRow = {
+  id: string
+  member_id: string
+  method: FundingMethod | null
+  self_amount_yen: number | null
+  self_confirmed: boolean
+  step_status: Record<string, 'todo' | 'done'>
+  status: 'in_progress' | 'completed'
+  created_at: string
+  updated_at: string
+}
+
 export type AgreementRow = {
   id: string
   title: string
@@ -225,6 +239,24 @@ export type AgreementConsentRow = {
   member_id: string
   agreement_id: string
   agreed_at: string
+}
+
+export type ManualSectionRow = {
+  id: string
+  title: string
+  body: string | null
+  note: string | null
+  sort_order: number
+  published: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ManualProgressRow = {
+  id: string
+  member_id: string
+  section_id: string
+  checked_at: string
 }
 
 export type EvidenceKind = 'identity' | 'antique_license' | 'other'
@@ -300,6 +332,9 @@ export type Database = {
       evidences: { Row: EvidenceRow; Insert: Partial<EvidenceRow>; Update: Partial<EvidenceRow> }
       agreements: { Row: AgreementRow; Insert: Partial<AgreementRow>; Update: Partial<AgreementRow> }
       agreement_consents: { Row: AgreementConsentRow; Insert: Partial<AgreementConsentRow>; Update: Partial<AgreementConsentRow> }
+      manual_sections: { Row: ManualSectionRow; Insert: Partial<ManualSectionRow>; Update: Partial<ManualSectionRow> }
+      manual_progress: { Row: ManualProgressRow; Insert: Partial<ManualProgressRow>; Update: Partial<ManualProgressRow> }
+      funding_applications: { Row: FundingRow; Insert: Partial<FundingRow>; Update: Partial<FundingRow> }
       chat_conversations: { Row: ChatConversationRow; Insert: Partial<ChatConversationRow>; Update: Partial<ChatConversationRow> }
       chat_messages: { Row: ChatMessageRow; Insert: Partial<ChatMessageRow>; Update: Partial<ChatMessageRow> }
       announcements: { Row: AnnouncementRow; Insert: Partial<AnnouncementRow>; Update: Partial<AnnouncementRow> }

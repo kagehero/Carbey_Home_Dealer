@@ -36,6 +36,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (canAccess(session.role, 'plans')) settingsItems.push({ href: '/admin/plans', label: 'プラン管理', icon: 'settings' })
   if (canAccess(session.role, 'settings')) settingsItems.push({ href: '/admin/permissions', label: '権限管理', icon: 'settings' })
   settingsItems.push({ href: '/admin/terms', label: '利用規約設定', icon: 'contract' })
+  settingsItems.push({ href: '/admin/manual', label: '実践マニュアル', icon: 'report' })
   settingsItems.push({ href: '/admin/support', label: 'サポート', icon: 'support', soon: true })
 
   // 本日のアラート (Phase 2 で実データ化。現状はカンプ準拠のダミー)

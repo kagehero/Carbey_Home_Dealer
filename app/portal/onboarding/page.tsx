@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { Loader2, Lock, Unlock, Rocket, GraduationCap, FileText, ShieldCheck } from 'lucide-react'
+import { Loader2, Lock, Unlock, Rocket, GraduationCap, FileText, ShieldCheck, BookOpen, ScrollText, Wallet } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
@@ -66,15 +66,29 @@ export default async function OnboardingPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* フローチャート */}
         <div className="space-y-5 lg:col-span-2">
-          {/* 書類提出への導線 */}
-          <Link href="/portal/onboarding/evidence" className="flex items-center gap-3 rounded-2xl border border-brand-500/30 bg-brand-500/10 px-5 py-4 transition hover:bg-brand-500/15">
-            <ShieldCheck className="h-6 w-6 shrink-0 text-brand-400" />
-            <div className="flex-1">
-              <div className="text-sm font-semibold text-white">本人確認・書類の提出</div>
-              <div className="text-xs text-slate-400">顔写真付き身分証の提出（必須）と古物商許可証（任意）はこちら</div>
-            </div>
-            <span className="text-brand-400">→</span>
-          </Link>
+          {/* 各タスクへの導線 */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Link href="/portal/onboarding/evidence" className="flex flex-col gap-2 rounded-xl border border-carbon-700 bg-carbon-800/40 p-4 transition hover:border-brand-500/40 hover:bg-brand-500/10">
+              <ShieldCheck className="h-5 w-5 text-brand-400" />
+              <div className="text-sm font-semibold text-white">本人確認・書類</div>
+              <div className="text-[11px] text-slate-400">身分証・古物商の提出</div>
+            </Link>
+            <Link href="/portal/onboarding/funding" className="flex flex-col gap-2 rounded-xl border border-carbon-700 bg-carbon-800/40 p-4 transition hover:border-brand-500/40 hover:bg-brand-500/10">
+              <Wallet className="h-5 w-5 text-brand-400" />
+              <div className="text-sm font-semibold text-white">資金準備</div>
+              <div className="text-[11px] text-slate-400">自己資金 / 資金調達</div>
+            </Link>
+            <Link href="/portal/onboarding/manual" className="flex flex-col gap-2 rounded-xl border border-carbon-700 bg-carbon-800/40 p-4 transition hover:border-brand-500/40 hover:bg-brand-500/10">
+              <BookOpen className="h-5 w-5 text-brand-400" />
+              <div className="text-sm font-semibold text-white">実践マニュアル</div>
+              <div className="text-[11px] text-slate-400">チェック式で修了</div>
+            </Link>
+            <Link href="/portal/terms" className="flex flex-col gap-2 rounded-xl border border-carbon-700 bg-carbon-800/40 p-4 transition hover:border-brand-500/40 hover:bg-brand-500/10">
+              <ScrollText className="h-5 w-5 text-brand-400" />
+              <div className="text-sm font-semibold text-white">利用規約</div>
+              <div className="text-[11px] text-slate-400">確認して同意</div>
+            </Link>
+          </div>
 
           <DarkCard>
             <DarkCardHeader title="スタートアップ ステップ" action={<span className="text-xs text-slate-500">全 {view.steps.length} ステップ</span>} />

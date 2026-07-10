@@ -1,14 +1,16 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Mail, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle } from 'lucide-react'
+import { ArrowLeft, Mail, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember, listPayments } from '@/lib/portal/members'
 import { listPlans } from '@/lib/portal/plans'
 import { listEvidences } from '@/lib/portal/evidence'
+import { getFunding, LOAN_STEPS } from '@/lib/portal/funding'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
 import { updateMemberAction, inviteMemberAction, issueCredentialsAction } from '../actions'
 import { reviewEvidenceAction } from '../evidence-actions'
+import { confirmSelfAction, setAdminStepAction } from '../funding-actions'
 import MemberFormFields from '../MemberFormFields'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +29,7 @@ export default async function MemberDetailPage({
     getMember(id), listPlans(false), listPayments(id), listEvidences(id),
   ])
   if (!member) notFound()
+  const funding = await getFunding(member.id)
 
   const onboardingPct = member.onboarding_total
     ? Math.round((member.onboarding_done / member.onboarding_total) * 100)
@@ -205,6 +208,74 @@ export default async function MemberDetailPage({
               )
             })}
           </ul>
+        )}
+      </div>
+
+      {/* ===== 資金準備の確認（自己資金 / 資金調達） ===== */}
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <Wallet className="h-4 w-4 text-brand-500" /> 資金準備の確認
+        </h2>
+        {!funding?.method ? (
+          <p className="text-xs text-slate-400">加盟店がまだ資金準備の方法を選択していません。</p>
+        ) : funding.method === 'self' ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Badge tone="slate">自己資金</Badge>
+              <span className="font-semibold text-slate-900">{yen(funding.self_amount_yen)}</span>
+              {funding.self_confirmed && <span className="flex items-center gap-1 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5" /> 確認済み</span>}
+            </div>
+            {funding.self_amount_yen == null ? (
+              <p className="text-xs text-slate-400">加盟店による自己資金額の登録待ちです。</p>
+            ) : (
+              <form action={confirmSelfAction} className="flex items-center gap-2">
+                <input type="hidden" name="member_id" value={member.id} />
+                {funding.self_confirmed ? (
+                  <button name="confirmed" value="0" className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">確認を取消</button>
+                ) : (
+                  <button name="confirmed" value="1" className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600">自己資金を確認</button>
+                )}
+              </form>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="mb-1 flex items-center gap-2 text-sm">
+              <Badge tone="slate">資金調達</Badge>
+              {funding.status === 'completed' && <span className="flex items-center gap-1 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5" /> 完了</span>}
+            </div>
+            <ol className="space-y-1.5">
+              {LOAN_STEPS.map((step, i) => {
+                const done = funding.step_status?.[step.key] === 'done'
+                const prevDone = LOAN_STEPS.slice(0, i).every((s) => funding.step_status?.[s.key] === 'done')
+                const isAdmin = step.actor === 'admin'
+                return (
+                  <li key={step.key} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${done ? 'bg-brand-500 text-white' : 'border border-slate-300 text-slate-400'}`}>
+                      {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                    </span>
+                    <span className={`flex-1 text-sm ${done ? 'text-slate-500' : 'text-slate-800'}`}>{step.label}</span>
+                    <span className="text-[11px] text-slate-400">{isAdmin ? '本部' : '加盟店'}</span>
+                    {isAdmin ? (
+                      <form action={setAdminStepAction}>
+                        <input type="hidden" name="member_id" value={member.id} />
+                        <input type="hidden" name="step_key" value={step.key} />
+                        {done ? (
+                          <button name="done" value="0" className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">取消</button>
+                        ) : prevDone ? (
+                          <button name="done" value="1" className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-600">完了にする</button>
+                        ) : (
+                          <span className="flex items-center gap-1 text-[11px] text-slate-400"><Lock className="h-3 w-3" /> 前工程待ち</span>
+                        )}
+                      </form>
+                    ) : (
+                      <span className={`text-[11px] ${done ? 'text-green-600' : 'text-slate-400'}`}>{done ? '完了' : '加盟店対応'}</span>
+                    )}
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
         )}
       </div>
 
