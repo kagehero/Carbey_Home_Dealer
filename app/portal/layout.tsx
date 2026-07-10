@@ -23,6 +23,7 @@ export default async function PortalLayout({ children }: { children: React.React
     { href: '/portal/reports', label: 'レポート', icon: 'report', soon: true },
     { href: '/portal/chat', label: 'チャット', icon: 'chat' },
     { href: '/portal/announcements', label: 'お知らせ', icon: 'announce', badge: unread },
+    { href: '/portal/terms', label: '利用規約', icon: 'terms' },
     { href: '/portal/profile', label: '設定', icon: 'settings' },
   ]
 

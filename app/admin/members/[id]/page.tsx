@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Mail, CheckCircle2, KeyRound } from 'lucide-react'
+import { ArrowLeft, Mail, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember, listPayments } from '@/lib/portal/members'
 import { listPlans } from '@/lib/portal/plans'
+import { listEvidences } from '@/lib/portal/evidence'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
 import { updateMemberAction, inviteMemberAction, issueCredentialsAction } from '../actions'
+import { reviewEvidenceAction } from '../evidence-actions'
 import MemberFormFields from '../MemberFormFields'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +23,9 @@ export default async function MemberDetailPage({
   await requireFeature('members')
   const { id } = await params
   const sp = await searchParams
-  const [member, plans, payments] = await Promise.all([getMember(id), listPlans(false), listPayments(id)])
+  const [member, plans, payments, evidences] = await Promise.all([
+    getMember(id), listPlans(false), listPayments(id), listEvidences(id),
+  ])
   if (!member) notFound()
 
   const onboardingPct = member.onboarding_total
@@ -154,6 +158,54 @@ export default async function MemberDetailPage({
             {member.onboarding_done}/{member.onboarding_total}（{onboardingPct}%）
           </div>
         </div>
+      </div>
+
+      {/* ===== エビデンス確認（本人確認・古物商） ===== */}
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <ShieldCheck className="h-4 w-4 text-brand-500" /> 提出書類の確認
+        </h2>
+        {evidences.length === 0 ? (
+          <p className="text-xs text-slate-400">まだ書類が提出されていません。</p>
+        ) : (
+          <ul className="space-y-2">
+            {evidences.map((ev) => {
+              const kindLabel = ev.kind === 'identity' ? '本人確認' : ev.kind === 'antique_license' ? '古物商許可証' : 'その他'
+              const docLabel: Record<string, string> = { license: '運転免許証', mynumber: 'マイナンバー', passport: 'パスポート', antique: '古物商許可証', other: 'その他' }
+              const url = `/api/portal/evidence/${ev.id}`
+              return (
+                <li key={ev.id} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-slate-900">
+                        {kindLabel}{ev.doc_type ? `・${docLabel[ev.doc_type]}` : ''}
+                      </div>
+                      <div className="truncate text-xs text-slate-500">{ev.file_name} ・ {new Date(ev.created_at).toLocaleDateString('ja-JP')}</div>
+                    </div>
+                    <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                      ev.status === 'approved' ? 'bg-green-50 text-green-700' : ev.status === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {ev.status === 'approved' ? <CheckCircle2 className="h-3 w-3" /> : ev.status === 'rejected' ? <XCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                      {ev.status === 'approved' ? '承認済み' : ev.status === 'rejected' ? '却下' : '確認待ち'}
+                    </span>
+                    <a href={url} target="_blank" rel="noopener noreferrer" title="プレビュー" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100"><Eye className="h-4 w-4" /></a>
+                    <a href={`${url}?download=1`} title="ダウンロード" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100"><Download className="h-4 w-4" /></a>
+                  </div>
+                  {ev.status === 'pending' && (
+                    <form action={reviewEvidenceAction} className="mt-2 flex items-center gap-2">
+                      <input type="hidden" name="evidence_id" value={ev.id} />
+                      <input type="hidden" name="member_id" value={member.id} />
+                      <input name="note" placeholder="却下理由（任意）" className="flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none" />
+                      <button name="status" value="approved" className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600">承認</button>
+                      <button name="status" value="rejected" className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">却下</button>
+                    </form>
+                  )}
+                  {ev.status === 'rejected' && ev.note && <p className="mt-1 text-xs text-red-600">却下理由：{ev.note}</p>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
 
       {/* 編集フォーム */}

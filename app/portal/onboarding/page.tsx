@@ -1,5 +1,6 @@
 import Image from 'next/image'
-import { Loader2, Lock, Unlock, Rocket, GraduationCap, FileText } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, Lock, Unlock, Rocket, GraduationCap, FileText, ShieldCheck } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
@@ -64,7 +65,17 @@ export default async function OnboardingPage() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* フローチャート */}
-        <div className="lg:col-span-2">
+        <div className="space-y-5 lg:col-span-2">
+          {/* 書類提出への導線 */}
+          <Link href="/portal/onboarding/evidence" className="flex items-center gap-3 rounded-2xl border border-brand-500/30 bg-brand-500/10 px-5 py-4 transition hover:bg-brand-500/15">
+            <ShieldCheck className="h-6 w-6 shrink-0 text-brand-400" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-white">本人確認・書類の提出</div>
+              <div className="text-xs text-slate-400">顔写真付き身分証の提出（必須）と古物商許可証（任意）はこちら</div>
+            </div>
+            <span className="text-brand-400">→</span>
+          </Link>
+
           <DarkCard>
             <DarkCardHeader title="スタートアップ ステップ" action={<span className="text-xs text-slate-500">全 {view.steps.length} ステップ</span>} />
             <DarkCardBody>

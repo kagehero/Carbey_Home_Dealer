@@ -209,6 +209,44 @@ export type ChatMessageRow = {
   created_at: string
 }
 
+export type AgreementRow = {
+  id: string
+  title: string
+  body: string
+  version: number
+  published: boolean
+  author_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type AgreementConsentRow = {
+  id: string
+  member_id: string
+  agreement_id: string
+  agreed_at: string
+}
+
+export type EvidenceKind = 'identity' | 'antique_license' | 'other'
+export type EvidenceDocType = 'license' | 'mynumber' | 'passport' | 'antique' | 'other'
+export type EvidenceStatus = 'pending' | 'approved' | 'rejected'
+
+export type EvidenceRow = {
+  id: string
+  member_id: string
+  kind: EvidenceKind
+  doc_type: EvidenceDocType | null
+  storage_path: string
+  file_name: string
+  file_type: string | null
+  file_size: number | null
+  status: EvidenceStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
+  note: string | null
+  created_at: string
+}
+
 export type OrderStatus = 'received' | 'in_progress' | 'completed' | 'cancelled'
 
 export type OrderRow = {
@@ -259,6 +297,9 @@ export type Database = {
       notifications: { Row: NotificationRow; Insert: Partial<NotificationRow>; Update: Partial<NotificationRow> }
       onboarding_tasks: { Row: OnboardingTaskRow; Insert: Partial<OnboardingTaskRow>; Update: Partial<OnboardingTaskRow> }
       orders: { Row: OrderRow; Insert: Partial<OrderRow>; Update: Partial<OrderRow> }
+      evidences: { Row: EvidenceRow; Insert: Partial<EvidenceRow>; Update: Partial<EvidenceRow> }
+      agreements: { Row: AgreementRow; Insert: Partial<AgreementRow>; Update: Partial<AgreementRow> }
+      agreement_consents: { Row: AgreementConsentRow; Insert: Partial<AgreementConsentRow>; Update: Partial<AgreementConsentRow> }
       chat_conversations: { Row: ChatConversationRow; Insert: Partial<ChatConversationRow>; Update: Partial<ChatConversationRow> }
       chat_messages: { Row: ChatMessageRow; Insert: Partial<ChatMessageRow>; Update: Partial<ChatMessageRow> }
       announcements: { Row: AnnouncementRow; Insert: Partial<AnnouncementRow>; Update: Partial<AnnouncementRow> }
