@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Mail, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock, ScrollText } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock, ScrollText } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember, listPayments } from '@/lib/portal/members'
 import { listPlans } from '@/lib/portal/plans'
@@ -9,7 +9,7 @@ import { getFunding, LOAN_STEPS } from '@/lib/portal/funding'
 import { listConsentLog } from '@/lib/portal/agreements'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
-import { updateMemberAction, inviteMemberAction, issueCredentialsAction } from '../actions'
+import { updateMemberAction, issueCredentialsAction } from '../actions'
 import { reviewEvidenceAction } from '../evidence-actions'
 import { confirmSelfAction, setAdminStepAction } from '../funding-actions'
 import MemberFormFields from '../MemberFormFields'
@@ -21,7 +21,7 @@ export default async function MemberDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ invite?: string; msg?: string; cred?: string; pw?: string; error?: string }>
+  searchParams: Promise<{ msg?: string; cred?: string; pw?: string; error?: string }>
 }) {
   await requireFeature('members')
   const { id } = await params
@@ -85,16 +85,14 @@ export default async function MemberDetailPage({
       {sp.cred === 'error' && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">発行に失敗しました{sp.msg ? `: ${sp.msg}` : ''}</div>
       )}
-      {sp.invite === 'sent' && <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">招待メールを送信しました。</div>}
-      {sp.invite === 'smtp_unconfigured' && (
-        <div className="mb-4 rounded-lg bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
-          SMTP が未設定のため招待メールを送信できません（環境変数 SMTP_HOST / SMTP_USER / SMTP_PASS）。
-        </div>
-      )}
-      {sp.invite === 'error' && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">招待に失敗しました{sp.msg ? `: ${sp.msg}` : ''}</div>}
       {sp.error === 'contract_date_required' && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           契約ステータスを「稼働中（active）」にするには契約日が必須です（古物商許可の6ヶ月猶予の起算日になります）。契約日を入力して保存してください。
+        </div>
+      )}
+      {sp.error === 'email_duplicate' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          このメールアドレスは既に別の会員に登録されています。会員ごとに異なるメールアドレスを設定してください（1メール＝1会員）。
         </div>
       )}
 
@@ -134,17 +132,6 @@ export default async function MemberDetailPage({
         <p className="mt-2 text-xs text-slate-400">
           発行後、メール・パスワードを加盟店へ共有すると、加盟店はそのままログインできます。
         </p>
-
-        {/* 補助：メール招待（自分でパスワード設定させる従来方式） */}
-        {member.email && (
-          <form action={inviteMemberAction} className="mt-3 border-t border-slate-100 pt-3">
-            <input type="hidden" name="id" value={member.id} />
-            <button className="flex items-center gap-1.5 text-xs font-medium text-info-600 hover:underline">
-              <Mail className="h-3.5 w-3.5" />
-              または招待メールを送る（加盟店自身にパスワード設定させる）
-            </button>
-          </form>
-        )}
       </div>
 
       {/* サマリ行 */}

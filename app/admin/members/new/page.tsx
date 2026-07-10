@@ -31,6 +31,11 @@ export default async function NewMemberPage({
           契約ステータスを「稼働中（active）」にするには契約日が必須です（古物商許可の6ヶ月猶予の起算日になります）。
         </div>
       )}
+      {sp.error === 'email_duplicate' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          このメールアドレスは既に別の会員に登録されています。会員ごとに異なるメールアドレスを設定してください（1メール＝1会員）。
+        </div>
+      )}
 
       <form action={createMemberAction}>
         <MemberFormFields plans={plans} />

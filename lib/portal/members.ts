@@ -44,6 +44,22 @@ export async function getMember(id: string): Promise<MemberWithPlan | null> {
   return (data as unknown as MemberWithPlan) ?? null
 }
 
+/**
+ * 同じメールアドレスの会員が既に存在するか（1メール=1会員のため重複を防ぐ）。
+ * excludeId を渡すと自分自身は除外（編集時に使用）。大文字小文字は無視。
+ */
+export async function findMemberByEmail(email: string, excludeId?: string): Promise<{ id: string; member_name: string } | null> {
+  const supabase = createServiceRoleClient()
+  let query = supabase
+    .from('members')
+    .select('id, member_name')
+    .ilike('email', email)
+  if (excludeId) query = query.neq('id', excludeId)
+  const { data, error } = await query.limit(1).maybeSingle<{ id: string; member_name: string }>()
+  if (error) throw new Error(error.message)
+  return data ?? null
+}
+
 export async function createMember(input: MemberInsert): Promise<MemberRow> {
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase

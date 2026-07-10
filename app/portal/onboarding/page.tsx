@@ -44,7 +44,7 @@ export default async function OnboardingPage() {
         <div className="relative flex flex-col gap-6 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
           <div className="max-w-lg">
             <p className="text-xs font-semibold uppercase tracking-widest text-brand-400">Onboarding Flow</p>
-            <h1 className="mt-1.5 text-2xl font-bold">スタートアップ フロー</h1>
+            <h1 className="mt-1.5 text-2xl font-bold text-white">スタートアップ フロー</h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               各ステップを<span className="font-semibold text-white">順番に</span>完了してください。
               前のステップが終わるまで次には進めません。すべて完了すると、仕入れ・販売などの全機能が解放されます。
