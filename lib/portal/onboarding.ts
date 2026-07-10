@@ -55,7 +55,9 @@ export function buildOnboardingView(tasks: OnboardingTaskRow[]): OnboardingView 
     const arr = byStep.get(key)!
     const total = arr.length
     const done = arr.filter((t) => t.status === 'done').length
-    const stepDone = done === total
+    // ゲート判定は optional（古物商など）を除いた必須タスクのみで行う（飛ばせるが任意）
+    const required = arr.filter((t) => !t.optional)
+    const stepDone = required.every((t) => t.status === 'done')
     let status: OnboardingStep['status']
     if (stepDone) {
       status = 'done'
@@ -74,7 +76,9 @@ export function buildOnboardingView(tasks: OnboardingTaskRow[]): OnboardingView 
   const totalTasks = tasks.length
   const doneTasks = tasks.filter((t) => t.status === 'done').length
   const pct = totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0
-  const unlocked = totalTasks > 0 && doneTasks === totalTasks
+  // 機能解放は「必須タスクが全完了」で判定（optional は解放をブロックしない）
+  const requiredTasks = tasks.filter((t) => !t.optional)
+  const unlocked = requiredTasks.length > 0 && requiredTasks.every((t) => t.status === 'done')
   return { steps, totalTasks, doneTasks, pct, unlocked }
 }
 
@@ -82,6 +86,16 @@ export function buildOnboardingView(tasks: OnboardingTaskRow[]): OnboardingView 
 export async function completeOwnTask(userId: string, taskId: string): Promise<void> {
   const supabase = createServiceRoleClient()
   const { error } = await supabase.rpc('complete_own_task', { p_user_id: userId, p_task_id: taskId } as never)
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * 実体（本人確認/資金/規約/マニュアル）→ タスク状態を同期する。
+ * link_key 付きタスクを実体に合わせて done/todo に更新（自動化・飛ばせない）。
+ */
+export async function syncOnboardingStatus(memberId: string): Promise<void> {
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase.rpc('sync_onboarding_status', { p_member_id: memberId } as never)
   if (error) throw new Error(error.message)
 }
 
@@ -94,6 +108,8 @@ export async function getOwnOnboarding(userId: string): Promise<OnboardingView |
     .eq('user_id', userId)
     .maybeSingle<{ id: string }>()
   if (!member) return null
+  // 実体（本人確認/資金/規約/マニュアル）→ タスク状態を先に同期してから読む
+  await syncOnboardingStatus(member.id)
   const tasks = await listOnboardingTasks(member.id)
   return buildOnboardingView(tasks)
 }

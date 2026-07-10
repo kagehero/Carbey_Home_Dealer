@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Loader2 } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember } from '@/lib/portal/members'
-import { listOnboardingTasks, buildOnboardingView, ensureOnboardingTasks } from '@/lib/portal/onboarding'
+import { listOnboardingTasks, buildOnboardingView, ensureOnboardingTasks, syncOnboardingStatus } from '@/lib/portal/onboarding'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { setTaskStatusAction, seedTasksAction } from '../actions'
 
@@ -21,8 +21,9 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
   const member = await getMember(id)
   if (!member) notFound()
 
-  // タスクが無ければ生成（初回・保険）
+  // タスクが無ければ生成（初回・保険）→ 実体（本人確認/資金/規約/マニュアル）と同期
   await ensureOnboardingTasks(id)
+  await syncOnboardingStatus(id)
   const tasks = await listOnboardingTasks(id)
   const view = buildOnboardingView(tasks)
 
@@ -83,26 +84,35 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
                           ? <Loader2 className="h-4 w-4 text-brand-500" />
                           : <Circle className="h-4 w-4 text-slate-300" />}
                       {t.title}
+                      {t.optional && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">任意</span>}
                     </span>
-                    {/* 状態切替 */}
-                    <div className="flex items-center gap-1">
-                      {(['todo', 'in_progress', 'done'] as const).map((s) => (
-                        <form key={s} action={setTaskStatusAction}>
-                          <input type="hidden" name="task_id" value={t.id} />
-                          <input type="hidden" name="member_id" value={id} />
-                          <input type="hidden" name="status" value={s} />
-                          <button
-                            className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
-                              t.status === s
-                                ? s === 'done' ? 'bg-emerald-500 text-white' : s === 'in_progress' ? 'bg-brand-500 text-white' : 'bg-slate-600 text-white'
-                                : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
-                            }`}
-                          >
-                            {s === 'todo' ? '未着手' : s === 'in_progress' ? '進行中' : '完了'}
-                          </button>
-                        </form>
-                      ))}
-                    </div>
+                    {t.link_key ? (
+                      // 実体で自動判定されるタスク（本人確認/資金/規約/マニュアル）。手動切替は不可。
+                      <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <Link href={`/admin/members/${id}`} className="text-brand-600 hover:underline">対応画面へ</Link>
+                        ・自動判定
+                      </span>
+                    ) : (
+                      /* 状態切替（手動タスクのみ） */
+                      <div className="flex items-center gap-1">
+                        {(['todo', 'in_progress', 'done'] as const).map((s) => (
+                          <form key={s} action={setTaskStatusAction}>
+                            <input type="hidden" name="task_id" value={t.id} />
+                            <input type="hidden" name="member_id" value={id} />
+                            <input type="hidden" name="status" value={s} />
+                            <button
+                              className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                                t.status === s
+                                  ? s === 'done' ? 'bg-emerald-500 text-white' : s === 'in_progress' ? 'bg-brand-500 text-white' : 'bg-slate-600 text-white'
+                                  : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >
+                              {s === 'todo' ? '未着手' : s === 'in_progress' ? '進行中' : '完了'}
+                            </button>
+                          </form>
+                        ))}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -308,6 +308,10 @@ export type OnboardingTaskRow = {
   title: string
   status: OnboardingTaskStatus
   completion_type: 'auto' | 'manual'
+  /** 実体機能への接続キー（identity/antique_license/funding/terms/manual）。null=手動/自動ボタン */
+  link_key: string | null
+  /** ゲート対象外（古物商など・未提出でも先へ進める） */
+  optional: boolean
   sort_order: number
   due_date: string | null
   completed_at: string | null
