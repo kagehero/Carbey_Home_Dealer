@@ -178,12 +178,12 @@ export default async function AdminDashboardPage() {
         </Card>
       </div>
 
-      {/* ===== 車両進捗管理 (カンバン) ===== */}
+      {/* ===== 車両進捗管理 (カンバン・Phase 3 でデータ連動予定) ===== */}
       <Card>
         <CardHeader
-          title="車両進捗管理"
+          title={<span className="flex items-center gap-2">車両進捗管理 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-normal text-slate-500">準備中</span></span>}
           action={
-            <button className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600">
+            <button disabled className="flex cursor-not-allowed items-center gap-1.5 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400" title="Phase 3 で対応予定">
               <Plus className="h-3.5 w-3.5" /> 車両を追加
             </button>
           }

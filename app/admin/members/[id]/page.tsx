@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Mail, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Mail, CheckCircle2, KeyRound } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember, listPayments } from '@/lib/portal/members'
 import { listPlans } from '@/lib/portal/plans'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
-import { updateMemberAction, inviteMemberAction } from '../actions'
+import { updateMemberAction, inviteMemberAction, issueCredentialsAction } from '../actions'
 import MemberFormFields from '../MemberFormFields'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +16,7 @@ export default async function MemberDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ invite?: string; msg?: string }>
+  searchParams: Promise<{ invite?: string; msg?: string; cred?: string; pw?: string }>
 }) {
   await requireFeature('members')
   const { id } = await params
@@ -50,48 +50,87 @@ export default async function MemberDetailPage({
         </div>
       </div>
 
-      {/* 招待結果バナー */}
-      {sp.invite === 'sent' && (
-        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-          招待メールを送信しました。
+      {/* 結果バナー */}
+      {sp.cred === 'issued' && sp.pw && (
+        <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-green-800">
+            <CheckCircle2 className="h-4 w-4" /> ログイン情報を発行しました
+          </div>
+          <p className="mt-1 text-xs text-green-700">下記の認証情報を加盟店へお伝えください。このパスワードは再表示できません。</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-green-200 bg-white px-3 py-2">
+              <div className="text-[11px] text-slate-500">メールアドレス（ログインID）</div>
+              <div className="font-mono text-sm text-slate-900">{member.email}</div>
+            </div>
+            <div className="rounded-lg border border-green-200 bg-white px-3 py-2">
+              <div className="text-[11px] text-slate-500">パスワード</div>
+              <div className="font-mono text-sm font-semibold text-slate-900">{sp.pw}</div>
+            </div>
+          </div>
         </div>
       )}
+      {sp.cred === 'no_email' && (
+        <div className="mb-4 rounded-lg bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          ログイン発行にはメールアドレスが必要です。上部フォームでメールアドレスを登録してください。
+        </div>
+      )}
+      {sp.cred === 'error' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">発行に失敗しました{sp.msg ? `: ${sp.msg}` : ''}</div>
+      )}
+      {sp.invite === 'sent' && <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">招待メールを送信しました。</div>}
       {sp.invite === 'smtp_unconfigured' && (
         <div className="mb-4 rounded-lg bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
           SMTP が未設定のため招待メールを送信できません（環境変数 SMTP_HOST / SMTP_USER / SMTP_PASS）。
         </div>
       )}
-      {sp.invite === 'error' && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          招待に失敗しました{sp.msg ? `: ${sp.msg}` : ''}
-        </div>
-      )}
+      {sp.invite === 'error' && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">招待に失敗しました{sp.msg ? `: ${sp.msg}` : ''}</div>}
 
-      {/* アカウント招待 */}
-      <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex items-center gap-2 text-sm">
+      {/* ===== ログイン発行（本部が直接パスワードを発行する発行型フロー） ===== */}
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-brand-500" />
+          <h2 className="text-sm font-semibold text-slate-900">ログイン発行・権限</h2>
           {member.user_id ? (
-            <>
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <span className="text-slate-700">ログインアカウント連携済み</span>
-            </>
+            <span className="ml-auto flex items-center gap-1 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5" /> アカウント連携済み</span>
           ) : (
-            <>
-              <Mail className="h-4 w-4 text-slate-400" />
-              <span className="text-slate-500">未招待（ログインアカウント未連携）</span>
-            </>
+            <span className="ml-auto text-xs text-slate-400">未発行</span>
           )}
         </div>
+
         {member.email ? (
-          <form action={inviteMemberAction}>
+          <form action={issueCredentialsAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="id" value={member.id} />
-            <button className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-100">
-              <Mail className="h-4 w-4" />
-              {member.user_id ? '招待メールを再送' : '招待メールを送信'}
+            <div className="min-w-[220px] flex-1">
+              <label className="mb-1 block text-xs font-medium text-slate-600">パスワード（空欄で自動生成）</label>
+              <input name="password" placeholder="自動生成する場合は空欄" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">権限</label>
+              <select disabled className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                <option>加盟店（member）</option>
+              </select>
+            </div>
+            <button className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
+              {member.user_id ? 'パスワードを再発行' : 'ログイン情報を発行'}
             </button>
           </form>
         ) : (
-          <span className="text-xs text-slate-400">招待にはメールアドレスが必要です</span>
+          <p className="text-xs text-slate-400">発行にはメールアドレスの登録が必要です。</p>
+        )}
+
+        <p className="mt-2 text-xs text-slate-400">
+          発行後、メール・パスワードを加盟店へ共有すると、加盟店はそのままログインできます。
+        </p>
+
+        {/* 補助：メール招待（自分でパスワード設定させる従来方式） */}
+        {member.email && (
+          <form action={inviteMemberAction} className="mt-3 border-t border-slate-100 pt-3">
+            <input type="hidden" name="id" value={member.id} />
+            <button className="flex items-center gap-1.5 text-xs font-medium text-info-600 hover:underline">
+              <Mail className="h-3.5 w-3.5" />
+              または招待メールを送る（加盟店自身にパスワード設定させる）
+            </button>
+          </form>
         )}
       </div>
 

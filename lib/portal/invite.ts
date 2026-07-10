@@ -66,6 +66,66 @@ export async function inviteMember(member: MemberRow): Promise<void> {
   await sendEmail({ to: email, subject, html })
 }
 
+/** ランダムなパスワードを生成（本部発行用）。記号・英大小・数字を含む12文字。 */
+function generatePassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower = 'abcdefghijkmnpqrstuvwxyz'
+  const digit = '23456789'
+  const sym = '!@#$%&*'
+  const all = upper + lower + digit + sym
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)]
+  let pw = pick(upper) + pick(lower) + pick(digit) + pick(sym)
+  for (let i = 0; i < 8; i++) pw += pick(all)
+  return pw.split('').sort(() => Math.random() - 0.5).join('')
+}
+
+/**
+ * 本部が加盟店のログイン認証情報を「発行」する（メール招待に依存しない発行型フロー）。
+ *   1. auth.users を作成 or 取得し、パスワードを設定
+ *   2. portal.users に指定ロールで登録
+ *   3. members.user_id 紐付け
+ *   4. オンボーディングタスクを生成（未生成なら）
+ * 発行したパスワードを返す（本部が加盟店へ共有する。以降は本部からは再表示不可）。
+ */
+export async function issueMemberCredentials(
+  member: MemberRow,
+  opts?: { password?: string; role?: UserRole },
+): Promise<{ password: string; userId: string }> {
+  const email = member.email
+  if (!email) throw new Error('会員にメールアドレスが登録されていません')
+  const password = opts?.password?.trim() || generatePassword()
+  const role: UserRole = opts?.role ?? 'member'
+
+  const authClient = authAdmin()
+  const portal = createServiceRoleClient()
+
+  // 1. auth ユーザーを確保しパスワードを設定
+  let userId = await findUserIdByEmail(email)
+  if (!userId) {
+    const { data, error } = await authClient.auth.admin.createUser({ email, password, email_confirm: true })
+    if (error) throw new Error(error.message)
+    userId = data.user.id
+  } else {
+    const { error } = await authClient.auth.admin.updateUserById(userId, { password })
+    if (error) throw new Error(error.message)
+  }
+
+  // 2. portal.users に指定ロールで登録
+  const { error: uErr } = await portal
+    .from('users')
+    .upsert({ id: userId, email, name: member.member_name, role } as never)
+  if (uErr) throw new Error(uErr.message)
+
+  // 3. members.user_id 紐付け
+  const { error: mErr } = await portal.from('members').update({ user_id: userId } as never).eq('id', member.id)
+  if (mErr) throw new Error(mErr.message)
+
+  // 4. オンボーディングタスク生成（冪等）
+  await portal.rpc('seed_onboarding_tasks', { p_member_id: member.id } as never)
+
+  return { password, userId }
+}
+
 /**
  * 本部スタッフを招待する (管理者 / CRM入力担当 / チャット専用)。
  * 加盟店招待と違い members レコードには紐付けず、portal.users に指定ロールで登録する。

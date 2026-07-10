@@ -56,9 +56,9 @@ function NavLink({ entry, active }: { entry: PortalNavEntry; active: boolean }) 
   )
   if (entry.soon) {
     return (
-      <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-medium text-slate-500" title="準備中">
+      <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-medium text-slate-500" title="準備中（今後のアップデートで対応予定）">
         <span className="flex items-center gap-3"><Icon className="h-[18px] w-[18px] text-slate-600" />{entry.label}</span>
-        <span className="h-1.5 w-1.5 rounded-full bg-slate-700" aria-label="準備中" />
+        <span className="rounded bg-carbon-700 px-1.5 py-0.5 text-[9px] font-normal text-slate-500">準備中</span>
       </div>
     )
   }

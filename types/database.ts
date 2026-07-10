@@ -237,6 +237,7 @@ export type OnboardingTaskRow = {
   step_label: string
   title: string
   status: OnboardingTaskStatus
+  completion_type: 'auto' | 'manual'
   sort_order: number
   due_date: string | null
   completed_at: string | null

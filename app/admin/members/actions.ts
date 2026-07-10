@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { requireFeature } from '@/lib/auth/session'
 import { createMember, updateMember, getMember } from '@/lib/portal/members'
 import { notifyAdmin } from '@/lib/portal/notifications'
-import { inviteMember } from '@/lib/portal/invite'
+import { inviteMember, issueMemberCredentials } from '@/lib/portal/invite'
 import { isSmtpConfigured } from '@/lib/email/sendEmail'
 import type { MemberStatus, PaymentStatus } from '@/types/database'
 
@@ -74,6 +74,33 @@ export async function updateMemberAction(formData: FormData) {
 
   revalidatePath(`/admin/members/${id}`)
   redirect(`/admin/members/${id}`)
+}
+
+/**
+ * 本部が加盟店のログイン認証情報を発行する（発行型フロー）。
+ * パスワード未入力なら自動生成。発行後、パスワードを画面に1回だけ表示する。
+ */
+export async function issueCredentialsAction(formData: FormData) {
+  await requireFeature('members')
+  const id = str(formData.get('id'))
+  if (!id) redirect('/admin/members')
+
+  const member = await getMember(id)
+  if (!member) redirect('/admin/members')
+  if (!member.email) redirect(`/admin/members/${id}?cred=no_email`)
+
+  const pwInput = str(formData.get('password'))
+  try {
+    const { password } = await issueMemberCredentials(member, pwInput ? { password: pwInput } : undefined)
+    await notifyAdmin('member_registered', 'ログイン発行', `${member.member_name} のログイン情報を発行しました`)
+    revalidatePath(`/admin/members/${id}`)
+    // パスワードは1回だけ画面表示（URLで受け渡し）
+    redirect(`/admin/members/${id}?cred=issued&pw=${encodeURIComponent(password)}`)
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e
+    const msg = e instanceof Error ? e.message : 'unknown'
+    redirect(`/admin/members/${id}?cred=error&msg=${encodeURIComponent(msg)}`)
+  }
 }
 
 /** 加盟店に招待メールを送る (要求書 5.1: メール+パスワード認証 / 招待フロー)。 */

@@ -208,10 +208,10 @@ export default async function MemberDashboardPage() {
         <DarkCardHeader title="クイックアクセス" />
         <DarkCardBody>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <QuickBtn icon={<Car className="h-5 w-5" />} label="車両登録" href="/portal/vehicles" />
+            <QuickBtn icon={<Car className="h-5 w-5" />} label="車両登録" href="/portal/vehicles" soon />
             <QuickBtn icon={<ClipboardPlus className="h-5 w-5" />} label="オーダー作成" href="/portal/orders" />
-            <QuickBtn icon={<Search className="h-5 w-5" />} label="AI相場検索" href="/portal/ai" />
-            <QuickBtn icon={<FileBarChart className="h-5 w-5" />} label="レポート出力" href="/portal/reports" />
+            <QuickBtn icon={<Search className="h-5 w-5" />} label="AI相場検索" href="/portal/ai" soon />
+            <QuickBtn icon={<FileBarChart className="h-5 w-5" />} label="レポート出力" href="/portal/reports" soon />
             <QuickBtn icon={<MessageSquare className="h-5 w-5" />} label="チャットを開く" href="/portal/chat" primary />
           </div>
         </DarkCardBody>
@@ -220,7 +220,17 @@ export default async function MemberDashboardPage() {
   )
 }
 
-function QuickBtn({ icon, label, href, primary = false }: { icon: React.ReactNode; label: string; href: string; primary?: boolean }) {
+function QuickBtn({ icon, label, href, primary = false, soon = false }: { icon: React.ReactNode; label: string; href: string; primary?: boolean; soon?: boolean }) {
+  // 未実装（準備中）はクリック不可・バッジ表示
+  if (soon) {
+    return (
+      <div className="relative flex cursor-not-allowed flex-col items-center justify-center gap-2 rounded-xl border border-carbon-700 bg-carbon-800/20 p-4 text-center text-xs font-medium text-slate-600" title="準備中">
+        <span className="absolute right-2 top-2 rounded bg-carbon-700 px-1.5 py-0.5 text-[9px] text-slate-500">準備中</span>
+        <span className="text-slate-600">{icon}</span>
+        {label}
+      </div>
+    )
+  }
   return (
     <Link href={href} className={`flex flex-col items-center justify-center gap-2 rounded-xl border p-4 text-center text-xs font-medium transition ${
       primary ? 'border-brand-500/40 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20'
