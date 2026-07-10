@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Mail, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock } from 'lucide-react'
+import { ArrowLeft, Mail, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock, ScrollText } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember, listPayments } from '@/lib/portal/members'
 import { listPlans } from '@/lib/portal/plans'
 import { listEvidences } from '@/lib/portal/evidence'
 import { getFunding, LOAN_STEPS } from '@/lib/portal/funding'
+import { listConsentLog } from '@/lib/portal/agreements'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
 import { updateMemberAction, inviteMemberAction, issueCredentialsAction } from '../actions'
@@ -29,7 +30,7 @@ export default async function MemberDetailPage({
     getMember(id), listPlans(false), listPayments(id), listEvidences(id),
   ])
   if (!member) notFound()
-  const funding = await getFunding(member.id)
+  const [funding, consents] = await Promise.all([getFunding(member.id), listConsentLog(member.id)])
 
   const onboardingPct = member.onboarding_total
     ? Math.round((member.onboarding_done / member.onboarding_total) * 100)
@@ -277,6 +278,30 @@ export default async function MemberDetailPage({
             </ol>
           </div>
         )}
+      </div>
+
+      {/* ===== 利用規約 同意履歴（証拠保全ログ） ===== */}
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <ScrollText className="h-4 w-4 text-brand-500" /> 利用規約 同意履歴
+        </h2>
+        {consents.length === 0 ? (
+          <p className="text-xs text-slate-400">まだ同意記録がありません。</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {consents.map((c) => (
+              <li key={c.id} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                <span className="flex-1 text-slate-800">
+                  {c.agreement_title ?? '（規約）'}
+                  {c.agreement_version != null && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">v{c.agreement_version}</span>}
+                </span>
+                <span className="text-xs text-slate-500">{new Date(c.agreed_at).toLocaleString('ja-JP')}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-[11px] text-slate-400">同意記録は改ざん防止のため保全されます（規約が更新・削除されても履歴は残ります）。</p>
       </div>
 
       {/* 編集フォーム */}

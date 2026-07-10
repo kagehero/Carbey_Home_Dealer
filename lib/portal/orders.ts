@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
+import { assertTradingAllowed } from '@/lib/portal/trading'
 import type { OrderRow, OrderStatus } from '@/types/database'
 
 export type OrderWithMember = OrderRow & {
@@ -53,6 +54,9 @@ export async function createOwnOrder(
   userId: string,
   input: Pick<OrderRow, 'maker' | 'car_model' | 'year' | 'budget_yen' | 'preferred_color' | 'mileage_max' | 'notes'>,
 ): Promise<OrderRow> {
+  // 取引可否ガード：古物商猶予の超過中は発注不可（自動発注の事故防止）
+  await assertTradingAllowed(userId)
+
   const supabase = createServiceRoleClient()
   const { data: member } = await supabase
     .from('members')

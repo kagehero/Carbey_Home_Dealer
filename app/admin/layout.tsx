@@ -25,6 +25,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   primary.push({ href: '/admin/sales', label: '販売実績管理', icon: 'sales', soon: true })
   primary.push({ href: '/admin/ai', label: 'AI分析・壁打ち', icon: 'ai', soon: true })
   primary.push({ href: '/admin/chat', label: 'チャット', icon: 'chat' })
+  if (canAccess(session.role, 'members')) {
+    primary.push({ href: '/admin/support', label: '本部サポート', icon: 'support' })
+  }
   primary.push({ href: '/admin/announcements', label: 'お知らせ配信', icon: 'announcement' })
   if (canAccess(session.role, 'crm')) {
     primary.push({ href: '/admin/crm', label: 'CRM', icon: 'crm' })
@@ -37,7 +40,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (canAccess(session.role, 'settings')) settingsItems.push({ href: '/admin/permissions', label: '権限管理', icon: 'settings' })
   settingsItems.push({ href: '/admin/terms', label: '利用規約設定', icon: 'contract' })
   settingsItems.push({ href: '/admin/manual', label: '実践マニュアル', icon: 'report' })
-  settingsItems.push({ href: '/admin/support', label: 'サポート', icon: 'support', soon: true })
 
   // 本日のアラート (Phase 2 で実データ化。現状はカンプ準拠のダミー)
   const alerts = [

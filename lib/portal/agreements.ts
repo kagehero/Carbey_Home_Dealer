@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
-import type { AgreementRow } from '@/types/database'
+import type { AgreementRow, AgreementConsentRow } from '@/types/database'
 
 /** 現在有効な（公開中・最新の）利用規約を取得。 */
 export async function getActiveAgreement(): Promise<AgreementRow | null> {
@@ -23,7 +23,14 @@ export async function listAgreements(): Promise<AgreementRow[]> {
   return (data ?? []) as unknown as AgreementRow[]
 }
 
-/** 規約を保存（新規 or 更新）。公開すると他は自動で非公開化。 */
+/**
+ * 規約を保存。
+ * 証拠保全・再同意の一貫性のため「公開済み規約は不変」とする（⑥-3）:
+ *   - 未公開の下書き(id あり) → その行を更新
+ *   - 公開済みの規約を編集 → 新バージョンとして新規発行（既存加盟店の再同意対象になる）
+ *   - id 無し → 新規発行
+ * 公開すると他は自動で非公開化（有効規約は常に1件）。
+ */
 export async function saveAgreement(input: {
   id?: string
   title: string
@@ -33,11 +40,23 @@ export async function saveAgreement(input: {
 }): Promise<void> {
   const supabase = createServiceRoleClient()
 
+  // 既存行が「公開済み」なら不変扱い → 新バージョンを発行する
+  let editableId = input.id
   if (input.id) {
+    const { data: existing } = await supabase
+      .from('agreements')
+      .select('published')
+      .eq('id', input.id)
+      .maybeSingle<{ published: boolean }>()
+    if (existing?.published) editableId = undefined // 公開済みは編集せず新版
+  }
+
+  if (editableId) {
+    // 未公開の下書きを更新
     const { error } = await supabase
       .from('agreements')
       .update({ title: input.title, body: input.body, published: input.published } as never)
-      .eq('id', input.id)
+      .eq('id', editableId)
     if (error) throw new Error(error.message)
   } else {
     // version は既存最大+1
@@ -56,6 +75,18 @@ export async function saveAgreement(input: {
       await supabase.from('agreements').update({ published: false } as never).eq('published', true).neq('id', latest.id)
     }
   }
+}
+
+/** 加盟店の同意履歴（証拠保全ログ・新しい順）。本部の確認用。 */
+export async function listConsentLog(memberId: string): Promise<AgreementConsentRow[]> {
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase
+    .from('agreement_consents')
+    .select('*')
+    .eq('member_id', memberId)
+    .order('agreed_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as unknown as AgreementConsentRow[]
 }
 
 /** 規約を削除（本部）。 */

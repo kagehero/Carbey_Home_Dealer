@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { UploadCloud, FileText, Eye, Download, Trash2, CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-react'
+import { UploadCloud, FileText, Eye, Download, Trash2, CheckCircle2, Clock, XCircle, Loader2, RotateCcw } from 'lucide-react'
 import { uploadEvidenceAction, deleteEvidenceAction } from '@/app/portal/onboarding/evidence/actions'
 import type { EvidenceRow, EvidenceKind, EvidenceDocType } from '@/types/database'
 
@@ -62,8 +62,24 @@ export default function EvidenceUploader({
     if (f) submit(f)
   }
 
+  // 承認済みが1件でもあれば「提出完了」。却下のみ（承認/確認待ちが無い）なら再提出を促す。
+  const hasApproved = items.some((e) => e.status === 'approved')
+  const hasPending = items.some((e) => e.status === 'pending')
+  const needsResubmit = !hasApproved && !hasPending && items.some((e) => e.status === 'rejected')
+
   return (
     <div className="space-y-3">
+      {/* 却下 → 再提出のご案内（承認・確認待ちが無いとき） */}
+      {needsResubmit && (
+        <div className="flex items-start gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2.5 text-xs">
+          <RotateCcw className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
+          <span className="text-rose-200">
+            提出書類が<span className="font-semibold">却下</span>されました。下記の却下理由をご確認のうえ、
+            <span className="font-semibold text-rose-100">もう一度アップロード</span>してください。
+          </span>
+        </div>
+      )}
+
       {/* 身分証種別（本人確認のみ） */}
       {kind === 'identity' && (
         <div className="flex flex-wrap gap-2">
@@ -150,7 +166,7 @@ function EvidenceItem({ ev }: { ev: EvidenceRow }) {
       <a href={`${url}?download=1`} title="ダウンロード" className="rounded-md p-1.5 text-slate-400 hover:bg-white/5">
         <Download className="h-3.5 w-3.5" />
       </a>
-      {ev.status === 'pending' && (
+      {ev.status !== 'approved' && (
         <button onClick={onDelete} disabled={pending} title="削除（再提出）" className="rounded-md p-1.5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 disabled:opacity-50">
           {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
         </button>

@@ -237,8 +237,12 @@ export type AgreementRow = {
 export type AgreementConsentRow = {
   id: string
   member_id: string
-  agreement_id: string
+  agreement_id: string | null
   agreed_at: string
+  /** 同意時点のスナップショット（証拠保全） */
+  agreement_version: number | null
+  agreement_title: string | null
+  user_id: string | null
 }
 
 export type ManualSectionRow = {

@@ -20,15 +20,23 @@ export async function createOrderAction(formData: FormData) {
   const car_model = str(formData.get('car_model'))
   if (!car_model) redirect('/portal/orders?error=model_required')
 
-  await createOwnOrder(session.userId, {
-    maker: str(formData.get('maker')),
-    car_model: car_model!,
-    year: str(formData.get('year')),
-    budget_yen: num(formData.get('budget_yen')),
-    preferred_color: str(formData.get('preferred_color')),
-    mileage_max: num(formData.get('mileage_max')),
-    notes: str(formData.get('notes')),
-  })
+  try {
+    await createOwnOrder(session.userId, {
+      maker: str(formData.get('maker')),
+      car_model: car_model!,
+      year: str(formData.get('year')),
+      budget_yen: num(formData.get('budget_yen')),
+      preferred_color: str(formData.get('preferred_color')),
+      mileage_max: num(formData.get('mileage_max')),
+      notes: str(formData.get('notes')),
+    })
+  } catch (e) {
+    // 古物商猶予の超過などで取引がロックされている場合
+    if (e instanceof Error && e.message.includes('古物商')) {
+      redirect('/portal/orders?error=trading_locked')
+    }
+    throw e
+  }
 
   revalidatePath('/portal/orders')
   redirect('/portal/orders?created=1')

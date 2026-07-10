@@ -73,7 +73,8 @@ export async function deleteOwnEvidence(userId: string, evidenceId: string): Pro
     .eq('member_id', member.id)
     .maybeSingle<{ id: string; storage_path: string; status: EvidenceStatus }>()
   if (!ev) throw new Error('見つかりません')
-  if (ev.status !== 'pending') throw new Error('確認済みのため削除できません')
+  // 確認待ち or 却下は削除可（却下→再提出のため）。承認済みは削除不可。
+  if (ev.status === 'approved') throw new Error('承認済みのため削除できません')
 
   await supabase.storage.from(BUCKET).remove([ev.storage_path])
   const { error } = await supabase.from('evidences').delete().eq('id', evidenceId)

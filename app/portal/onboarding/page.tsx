@@ -3,9 +3,11 @@ import Link from 'next/link'
 import { Loader2, Lock, Unlock, Rocket, GraduationCap, FileText, ShieldCheck, BookOpen, ScrollText, Wallet } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
+import { getOwnAntiqueGrace } from '@/lib/portal/trading'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
 import { DarkProgressRing } from '@/components/portal-dark/DarkCharts'
 import OnboardingFlow from '@/components/portal-dark/OnboardingFlow'
+import AntiqueGraceBanner from '@/components/portal-dark/AntiqueGraceBanner'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +17,10 @@ export const dynamic = 'force-dynamic'
  */
 export default async function OnboardingPage() {
   const session = await requireMember()
-  const view = await getOwnOnboarding(session.userId)
+  const [view, grace] = await Promise.all([
+    getOwnOnboarding(session.userId),
+    getOwnAntiqueGrace(session.userId),
+  ])
 
   if (!view) {
     return (
@@ -30,6 +35,8 @@ export default async function OnboardingPage() {
 
   return (
     <div className="space-y-5">
+      {/* 古物商猶予の警告（黄=事前 / 赤=超過ロック）を進捗ステータス上部に表示 */}
+      <AntiqueGraceBanner grace={grace} />
       {/* ヒーロー */}
       <div className="relative overflow-hidden rounded-2xl border border-carbon-700 bg-carbon-900 text-white">
         <Image src="/login-hero.png" alt="" fill priority sizes="100vw" className="object-cover object-right opacity-40" />

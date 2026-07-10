@@ -1,8 +1,10 @@
-import { Plus, CheckCircle2, ShoppingCart } from 'lucide-react'
+import { Plus, CheckCircle2, ShoppingCart, Lock } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { listOwnOrders } from '@/lib/portal/orders'
+import { getOwnAntiqueGrace } from '@/lib/portal/trading'
 import { ORDER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
+import AntiqueGraceBanner from '@/components/portal-dark/AntiqueGraceBanner'
 import { createOrderAction } from './actions'
 import type { OrderStatus } from '@/types/database'
 
@@ -25,8 +27,12 @@ export default async function MemberOrdersPage({
   searchParams: Promise<{ created?: string; error?: string }>
 }) {
   const session = await requireMember()
-  const orders = await listOwnOrders(session.userId)
+  const [orders, grace] = await Promise.all([
+    listOwnOrders(session.userId),
+    getOwnAntiqueGrace(session.userId),
+  ])
   const sp = await searchParams
+  const locked = grace ? !grace.tradingAllowed : false
 
   return (
     <div className="space-y-5">
@@ -34,6 +40,9 @@ export default async function MemberOrdersPage({
         <h1 className="text-xl font-bold text-white">仕入れオーダー</h1>
         <p className="text-sm text-slate-400">本部へ車両の仕入れを依頼します。</p>
       </div>
+
+      {/* 古物商猶予の警告（黄=事前 / 赤=超過ロック） */}
+      <AntiqueGraceBanner grace={grace} />
 
       {sp.created && (
         <div className="flex items-center gap-2 rounded-lg border border-brand-500/30 bg-brand-500/10 px-4 py-3 text-sm text-brand-300">
@@ -43,25 +52,40 @@ export default async function MemberOrdersPage({
       {sp.error === 'model_required' && (
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">車種は必須です。</div>
       )}
+      {sp.error === 'trading_locked' && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">
+          古物商許可証の提出期限を超過しているため、オーダーを送信できません。許可証をアップロードしてください。
+        </div>
+      )}
 
       {/* 新規オーダーフォーム */}
       <DarkCard>
         <DarkCardHeader title={<span className="flex items-center gap-2"><Plus className="h-4 w-4 text-brand-400" /> 新規オーダー</span>} />
         <DarkCardBody>
-          <form action={createOrderAction} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div><label className={labelCls}>メーカー</label><input name="maker" placeholder="トヨタ" className={field} /></div>
-            <div><label className={labelCls}>車種 *</label><input name="car_model" required placeholder="ハリアー" className={field} /></div>
-            <div><label className={labelCls}>年式</label><input name="year" placeholder="2021年" className={field} /></div>
-            <div><label className={labelCls}>予算（円）</label><input name="budget_yen" type="number" min="0" placeholder="2500000" className={field} /></div>
-            <div><label className={labelCls}>希望色</label><input name="preferred_color" placeholder="ホワイトパール" className={field} /></div>
-            <div><label className={labelCls}>走行距離上限（km）</label><input name="mileage_max" type="number" min="0" placeholder="30000" className={field} /></div>
-            <div className="sm:col-span-3"><label className={labelCls}>要望・備考</label><textarea name="notes" rows={2} placeholder="ワンオーナー希望。事故歴なし。" className={field} /></div>
-            <div className="sm:col-span-3 flex justify-end">
-              <button className="rounded-lg bg-brand-500 px-5 py-2 text-sm font-semibold text-white glow-brand hover:bg-brand-600">
-                オーダーを送信
-              </button>
+          {locked ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <Lock className="h-7 w-7 text-rose-400" />
+              <p className="text-sm font-medium text-rose-300">取引機能は停止中です</p>
+              <p className="max-w-md text-xs text-slate-400">
+                古物商許可証の提出期限を超過しています。許可証をアップロードいただくと、仕入れオーダーを再開できます。
+              </p>
             </div>
-          </form>
+          ) : (
+            <form action={createOrderAction} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div><label className={labelCls}>メーカー</label><input name="maker" placeholder="トヨタ" className={field} /></div>
+              <div><label className={labelCls}>車種 *</label><input name="car_model" required placeholder="ハリアー" className={field} /></div>
+              <div><label className={labelCls}>年式</label><input name="year" placeholder="2021年" className={field} /></div>
+              <div><label className={labelCls}>予算（円）</label><input name="budget_yen" type="number" min="0" placeholder="2500000" className={field} /></div>
+              <div><label className={labelCls}>希望色</label><input name="preferred_color" placeholder="ホワイトパール" className={field} /></div>
+              <div><label className={labelCls}>走行距離上限（km）</label><input name="mileage_max" type="number" min="0" placeholder="30000" className={field} /></div>
+              <div className="sm:col-span-3"><label className={labelCls}>要望・備考</label><textarea name="notes" rows={2} placeholder="ワンオーナー希望。事故歴なし。" className={field} /></div>
+              <div className="sm:col-span-3 flex justify-end">
+                <button className="rounded-lg bg-brand-500 px-5 py-2 text-sm font-semibold text-white glow-brand hover:bg-brand-600">
+                  オーダーを送信
+                </button>
+              </div>
+            </form>
+          )}
         </DarkCardBody>
       </DarkCard>
 
