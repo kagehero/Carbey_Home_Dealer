@@ -26,6 +26,11 @@ export default async function NewMemberPage({
       {sp.error === 'name_required' && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">担当者氏名は必須です。</div>
       )}
+      {sp.error === 'contract_date_required' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          契約ステータスを「稼働中（active）」にするには契約日が必須です（古物商許可の6ヶ月猶予の起算日になります）。
+        </div>
+      )}
 
       <form action={createMemberAction}>
         <MemberFormFields plans={plans} />

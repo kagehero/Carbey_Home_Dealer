@@ -23,6 +23,11 @@ export async function createMemberAction(formData: FormData) {
   const member_name = str(formData.get('member_name'))
   if (!member_name) redirect('/admin/members/new?error=name_required')
 
+  // active（稼働開始）にするなら契約日は必須（古物商猶予の起算日になるため）
+  const status = (str(formData.get('status')) ?? 'pending') as MemberStatus
+  const contract_date = str(formData.get('contract_date'))
+  if (status === 'active' && !contract_date) redirect('/admin/members/new?error=contract_date_required')
+
   const m = await createMember({
     member_name,
     company_name: str(formData.get('company_name')),
@@ -34,8 +39,8 @@ export async function createMemberAction(formData: FormData) {
     delivery_address: str(formData.get('delivery_address')),
     delivery_contact: str(formData.get('delivery_contact')),
     plan_id: str(formData.get('plan_id')),
-    contract_date: str(formData.get('contract_date')),
-    status: (str(formData.get('status')) ?? 'pending') as MemberStatus,
+    contract_date,
+    status,
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),
     working_capital_yen: num(formData.get('working_capital_yen')),
@@ -52,6 +57,14 @@ export async function updateMemberAction(formData: FormData) {
   const id = str(formData.get('id'))
   if (!id) redirect('/admin/members')
 
+  const status = (str(formData.get('status')) ?? undefined) as MemberStatus | undefined
+  const contract_date = str(formData.get('contract_date'))
+  // active（稼働開始）にするなら契約日は必須。フォーム未入力でも既存に入っていればOK。
+  if (status === 'active' && !contract_date) {
+    const current = await getMember(id)
+    if (!current?.contract_date) redirect(`/admin/members/${id}?error=contract_date_required`)
+  }
+
   await updateMember(id, {
     member_name: str(formData.get('member_name')) ?? undefined,
     company_name: str(formData.get('company_name')),
@@ -63,8 +76,8 @@ export async function updateMemberAction(formData: FormData) {
     delivery_address: str(formData.get('delivery_address')),
     delivery_contact: str(formData.get('delivery_contact')),
     plan_id: str(formData.get('plan_id')),
-    contract_date: str(formData.get('contract_date')),
-    status: (str(formData.get('status')) ?? undefined) as MemberStatus | undefined,
+    contract_date,
+    status,
     payment_status: (str(formData.get('payment_status')) ?? undefined) as PaymentStatus | undefined,
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),

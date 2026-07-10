@@ -21,7 +21,7 @@ export default async function MemberDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ invite?: string; msg?: string; cred?: string; pw?: string }>
+  searchParams: Promise<{ invite?: string; msg?: string; cred?: string; pw?: string; error?: string }>
 }) {
   await requireFeature('members')
   const { id } = await params
@@ -92,6 +92,11 @@ export default async function MemberDetailPage({
         </div>
       )}
       {sp.invite === 'error' && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">招待に失敗しました{sp.msg ? `: ${sp.msg}` : ''}</div>}
+      {sp.error === 'contract_date_required' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          契約ステータスを「稼働中（active）」にするには契約日が必須です（古物商許可の6ヶ月猶予の起算日になります）。契約日を入力して保存してください。
+        </div>
+      )}
 
       {/* ===== ログイン発行（本部が直接パスワードを発行する発行型フロー） ===== */}
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
