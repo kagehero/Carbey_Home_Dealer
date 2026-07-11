@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { listOrders } from '@/lib/portal/orders'
+import { getMember } from '@/lib/portal/members'
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, yen } from '@/lib/portal/labels'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -15,25 +17,41 @@ const field = 'rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-7
 export default async function AdminOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; member?: string }>
 }) {
   await requireFeature('orders')
   const sp = await searchParams
   const filter = STATUSES.includes(sp.status as OrderStatus) ? (sp.status as OrderStatus) : undefined
-  const orders = await listOrders(filter)
+  const memberId = sp.member || undefined
+  const [orders, member] = await Promise.all([
+    listOrders({ status: filter, memberId }),
+    memberId ? getMember(memberId) : Promise.resolve(null),
+  ])
+  const statusHref = (s?: OrderStatus) => {
+    const params = new URLSearchParams()
+    if (s) params.set('status', s)
+    if (memberId) params.set('member', memberId)
+    const qs = params.toString()
+    return `/admin/orders${qs ? `?${qs}` : ''}`
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">オーダー管理</h1>
+        {member && (
+          <Link href={`/admin/members/${member.id}`} className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
+            <ArrowLeft className="h-4 w-4" /> {member.company_name ?? member.member_name} の詳細へ
+          </Link>
+        )}
+        <h1 className="text-xl font-bold text-slate-900">オーダー管理{member ? `：${member.company_name ?? member.member_name}` : ''}</h1>
         <p className="text-sm text-slate-500">加盟店からの仕入れ依頼を処理します。</p>
       </div>
 
-      {/* ステータスフィルタ */}
+      {/* ステータスフィルタ（member 絞り込みは維持） */}
       <div className="flex flex-wrap gap-2">
-        <FilterTab label="すべて" href="/admin/orders" active={!filter} />
+        <FilterTab label="すべて" href={statusHref()} active={!filter} />
         {STATUSES.map((s) => (
-          <FilterTab key={s} label={ORDER_STATUS_LABEL[s]} href={`/admin/orders?status=${s}`} active={filter === s} />
+          <FilterTab key={s} label={ORDER_STATUS_LABEL[s]} href={statusHref(s)} active={filter === s} />
         ))}
       </div>
 

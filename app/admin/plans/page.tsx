@@ -1,7 +1,7 @@
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Users, ChevronRight } from 'lucide-react'
 import { requireAdmin } from '@/lib/auth/session'
-import { listPlans } from '@/lib/portal/plans'
+import { listPlans, getPlanMemberCounts } from '@/lib/portal/plans'
 import { yen } from '@/lib/portal/labels'
 import { updatePlanAction } from './actions'
 
@@ -12,7 +12,7 @@ const field = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm foc
 export default async function PlansPage() {
   // プラン管理は super_admin のみ (permission matrix)
   await requireAdmin()
-  const plans = await listPlans()
+  const [plans, memberCounts] = await Promise.all([listPlans(), getPlanMemberCounts()])
 
   return (
     <div>
@@ -42,6 +42,10 @@ export default async function PlansPage() {
               <div className="flex items-center gap-2">
                 <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">{p.code}</span>
                 <span className="text-xs text-slate-400">{p.plan_type === 'semi_auto' ? '半自動' : '全自動'}</span>
+                {/* このプランの加盟店数 → 会員一覧（plan_id 絞り込み）へ */}
+                <Link href={`/admin/members?plan_id=${p.id}`} className="flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100">
+                  <Users className="h-3 w-3" /> 加盟店 {memberCounts[p.id] ?? 0} 件 <ChevronRight className="h-3 w-3" />
+                </Link>
               </div>
               <label className="flex items-center gap-1.5 text-xs text-slate-600">
                 <input type="checkbox" name="is_active" defaultChecked={p.is_active} />

@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock, ScrollText } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, KeyRound, ShieldCheck, Eye, Download, Clock, XCircle, Wallet, Lock, ScrollText, ShoppingCart, ChevronRight } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember, listPayments } from '@/lib/portal/members'
 import { listPlans } from '@/lib/portal/plans'
 import { listEvidences } from '@/lib/portal/evidence'
 import { getFunding, LOAN_STEPS } from '@/lib/portal/funding'
+import { getMemberOrderSummary } from '@/lib/portal/orders'
 import { listConsentLog } from '@/lib/portal/agreements'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
@@ -30,7 +31,9 @@ export default async function MemberDetailPage({
     getMember(id), listPlans(false), listPayments(id), listEvidences(id),
   ])
   if (!member) notFound()
-  const [funding, consents] = await Promise.all([getFunding(member.id), listConsentLog(member.id)])
+  const [funding, consents, orderSummary] = await Promise.all([
+    getFunding(member.id), listConsentLog(member.id), getMemberOrderSummary(member.id),
+  ])
 
   const onboardingPct = member.onboarding_total
     ? Math.round((member.onboarding_done / member.onboarding_total) * 100)
@@ -138,7 +141,15 @@ export default async function MemberDetailPage({
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="text-xs text-slate-500">プラン</div>
-          <div className="text-sm font-semibold text-slate-900">{member.plan?.name ?? '—'}</div>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            {member.plan ? (
+              <Badge tone={member.plan.code?.includes('full') || member.plan.name?.includes('フル') ? 'brand' : 'slate'}>
+                {member.plan.name}
+              </Badge>
+            ) : (
+              <span className="text-sm font-semibold text-amber-600">未割当</span>
+            )}
+          </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="text-xs text-slate-500">登録日</div>
@@ -149,9 +160,57 @@ export default async function MemberDetailPage({
           <div className="text-sm font-semibold text-slate-900">{yen(member.monthly_fee_yen)}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">オンボーディング</div>
-          <div className="text-sm font-semibold text-slate-900">
-            {member.onboarding_done}/{member.onboarding_total}（{onboardingPct}%）
+          <div className="text-xs text-slate-500">契約日</div>
+          <div className="text-sm font-semibold text-slate-900">{member.contract_date ?? '—'}</div>
+        </div>
+      </div>
+
+      {/* オンボーディング進捗 + オーダー状況（可視化） */}
+      <div className="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {/* 進捗バー */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-900">オンボーディング進捗</span>
+            <span className="text-sm font-bold text-slate-900">{onboardingPct}%</span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className={`h-full rounded-full ${onboardingPct >= 100 ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{ width: `${onboardingPct}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+            <span>{member.onboarding_done}/{member.onboarding_total} タスク完了</span>
+            <Link href={`/admin/onboarding/${member.id}`} className="flex items-center gap-0.5 font-medium text-brand-600 hover:underline">
+              進捗を管理 <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+        </div>
+
+        {/* オーダー状況 */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+              <ShoppingCart className="h-4 w-4 text-brand-500" /> オーダー状況
+            </span>
+            <Link href={`/admin/orders?member=${member.id}`} className="flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:underline">
+              オーダー管理を見る <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="rounded-lg bg-slate-50 py-2">
+              <div className="text-lg font-bold text-slate-900">{orderSummary.total}</div>
+              <div className="text-[10px] text-slate-500">合計</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 py-2">
+              <div className="text-lg font-bold text-amber-700">{orderSummary.received}</div>
+              <div className="text-[10px] text-slate-500">受付</div>
+            </div>
+            <div className="rounded-lg bg-sky-50 py-2">
+              <div className="text-lg font-bold text-sky-700">{orderSummary.in_progress}</div>
+              <div className="text-[10px] text-slate-500">対応中</div>
+            </div>
+            <div className="rounded-lg bg-emerald-50 py-2">
+              <div className="text-lg font-bold text-emerald-700">{orderSummary.completed}</div>
+              <div className="text-[10px] text-slate-500">完了</div>
+            </div>
           </div>
         </div>
       </div>
