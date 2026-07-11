@@ -10,12 +10,18 @@ export type MemberStatus = 'pending' | 'active' | 'suspended' | 'cancelled'
 export type PaymentStatus = 'unpaid' | 'paid' | 'overdue'
 export type PlanType = 'semi_auto' | 'full_auto'
 export type DealStatus = 'lead' | 'negotiating' | 'quoted' | 'won' | 'lost'
+/** 加盟店が実行するフロー種別（レビュー⑳）。semi=半自動売買 / auto=自動売買 */
+export type FlowType = 'semi' | 'auto'
 
 export type PlanRow = {
   id: string
   code: string
   name: string
   plan_type: PlanType
+  /** 半自動売買モデルを保有するか（レビュー⑳） */
+  has_semi: boolean
+  /** 自動売買モデルを保有するか（レビュー⑳） */
+  has_auto: boolean
   monthly_fee_yen: number
   joining_fee_yen: number
   display_order: number
@@ -29,6 +35,8 @@ export type PlanInsert = {
   code: string
   name: string
   plan_type: PlanType
+  has_semi?: boolean
+  has_auto?: boolean
   monthly_fee_yen?: number
   joining_fee_yen?: number
   display_order?: number
@@ -62,6 +70,8 @@ export type MemberRow = {
   plan_id: string | null
   contract_date: string | null
   status: MemberStatus
+  /** 実行中フロー（semi/auto）。null=プランの保有モデルから既定導出（レビュー⑳） */
+  active_flow: FlowType | null
   joining_fee_yen: number | null
   monthly_fee_yen: number | null
   working_capital_yen: number | null
@@ -88,6 +98,7 @@ export type MemberInsert = {
   plan_id?: string | null
   contract_date?: string | null
   status?: MemberStatus
+  active_flow?: FlowType | null
   joining_fee_yen?: number | null
   monthly_fee_yen?: number | null
   working_capital_yen?: number | null

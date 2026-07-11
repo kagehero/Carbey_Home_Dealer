@@ -70,6 +70,21 @@ export default async function PlansPage() {
                 <input name="display_order" type="number" defaultValue={p.display_order} className={field} />
               </div>
               <input type="hidden" name="plan_type" value={p.plan_type} />
+              {/* 保有モデル（レビュー⑳）：フルオート=両方 / セミオート=半自動のみ */}
+              <div className="sm:col-span-4">
+                <label className="mb-1 block text-xs text-slate-500">保有モデル（フロー種別）</label>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                    <input type="checkbox" name="has_semi" defaultChecked={p.has_semi} className="h-4 w-4 rounded border-slate-300 text-brand-500" />
+                    半自動売買（semi）
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                    <input type="checkbox" name="has_auto" defaultChecked={p.has_auto} className="h-4 w-4 rounded border-slate-300 text-brand-500" />
+                    自動売買（auto）
+                  </label>
+                  <span className="text-xs text-slate-400">※両方チェックすると加盟店がフローを切替可能</span>
+                </div>
+              </div>
               <div className="sm:col-span-3">
                 <label className="mb-1 block text-xs text-slate-500">説明</label>
                 <input name="description" defaultValue={p.description ?? ''} className={field} />
