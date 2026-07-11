@@ -48,6 +48,15 @@ export default async function AdminManualPage({
             <label className="mb-1 block text-xs font-medium text-slate-600">本部メモ（加盟店には非表示）</label>
             <input name="note" defaultValue={editing?.note ?? ''} placeholder="社内向けメモ（任意）" className={field} />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">フロー種別</label>
+            <select name="flow" defaultValue={editing?.flow ?? 'semi'} className={field}>
+              <option value="semi">半自動売買（semi）</option>
+              <option value="auto">自動売買（auto）</option>
+              <option value="both">共通（both・両フローに表示）</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-400">加盟店には、そのプラン/フローに該当する項目だけが表示されます。</p>
+          </div>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" name="published" defaultChecked={editing?.published ?? true} className="h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
             公開する（加盟店のチェック対象になります）
@@ -71,6 +80,11 @@ export default async function AdminManualPage({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-slate-900">{s.title}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                      s.flow === 'auto' ? 'bg-brand-50 text-brand-700' : s.flow === 'both' ? 'bg-slate-100 text-slate-600' : 'bg-info-50 text-info-700'
+                    }`}>
+                      {s.flow === 'auto' ? '自動' : s.flow === 'both' ? '共通' : '半自動'}
+                    </span>
                     {!s.published && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">非公開</span>}
                     {!s.body && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600">内容未記入</span>}
                   </div>

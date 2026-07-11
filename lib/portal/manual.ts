@@ -1,16 +1,19 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
-import type { ManualSectionRow } from '@/types/database'
+import { resolveFlow } from '@/lib/portal/flow'
+import type { ManualSectionRow, FlowType, PlanRow } from '@/types/database'
 
 export type ManualSectionWithCheck = ManualSectionRow & { checked: boolean }
 
-/** 公開中の実践マニュアル項目（並び順）。 */
-export async function listPublishedSections(): Promise<ManualSectionRow[]> {
+/** 公開中の実践マニュアル項目（並び順）。flow を指定すると該当フロー（＋both）に限定。 */
+export async function listPublishedSections(flow?: FlowType): Promise<ManualSectionRow[]> {
   const supabase = createServiceRoleClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('manual_sections')
     .select('*')
     .eq('published', true)
     .order('sort_order', { ascending: true })
+  if (flow) query = query.in('flow', [flow, 'both'])
+  const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as ManualSectionRow[]
 }
@@ -23,18 +26,23 @@ export async function listAllSections(): Promise<ManualSectionRow[]> {
   return (data ?? []) as unknown as ManualSectionRow[]
 }
 
-/** 加盟店向け：公開項目にチェック状況を付与。 */
-export async function getMemberManual(userId: string): Promise<{ sections: ManualSectionWithCheck[]; total: number; done: number } | null> {
+/** 加盟店向け：実効フローに該当する公開項目にチェック状況を付与。 */
+export async function getMemberManual(userId: string): Promise<{ sections: ManualSectionWithCheck[]; total: number; done: number; flow: FlowType } | null> {
   const supabase = createServiceRoleClient()
-  const { data: member } = await supabase.from('members').select('id').eq('user_id', userId).maybeSingle<{ id: string }>()
+  const { data: member } = await supabase
+    .from('members')
+    .select('id, active_flow, plan:plans(has_semi, has_auto)')
+    .eq('user_id', userId)
+    .maybeSingle<{ id: string; active_flow: FlowType | null; plan: Pick<PlanRow, 'has_semi' | 'has_auto'> | null }>()
   if (!member) return null
 
-  const sections = await listPublishedSections()
+  const flow = resolveFlow(member.plan, member.active_flow)
+  const sections = await listPublishedSections(flow)
   const { data: prog } = await supabase.from('manual_progress').select('section_id').eq('member_id', member.id)
   const checkedIds = new Set((prog ?? []).map((p: { section_id: string }) => p.section_id))
 
   const withCheck = sections.map((s) => ({ ...s, checked: checkedIds.has(s.id) }))
-  return { sections: withCheck, total: withCheck.length, done: withCheck.filter((s) => s.checked).length }
+  return { sections: withCheck, total: withCheck.length, done: withCheck.filter((s) => s.checked).length, flow }
 }
 
 /** 加盟店：項目をチェック/解除。 */
@@ -54,19 +62,20 @@ export async function toggleSectionCheck(userId: string, sectionId: string, chec
   }
 }
 
-/** 本部：項目を保存（新規/更新）。 */
+/** 本部：項目を保存（新規/更新）。flow でフロー種別を指定（semi/auto/both）。 */
 export async function saveSection(input: {
   id?: string
   title: string
   body: string | null
   note: string | null
+  flow: 'semi' | 'auto' | 'both'
   published: boolean
 }): Promise<void> {
   const supabase = createServiceRoleClient()
   if (input.id) {
     const { error } = await supabase
       .from('manual_sections')
-      .update({ title: input.title, body: input.body, note: input.note, published: input.published } as never)
+      .update({ title: input.title, body: input.body, note: input.note, flow: input.flow, published: input.published } as never)
       .eq('id', input.id)
     if (error) throw new Error(error.message)
   } else {
@@ -74,7 +83,7 @@ export async function saveSection(input: {
     const sort = (last?.sort_order ?? 0) + 10
     const { error } = await supabase
       .from('manual_sections')
-      .insert({ title: input.title, body: input.body, note: input.note, published: input.published, sort_order: sort } as never)
+      .insert({ title: input.title, body: input.body, note: input.note, flow: input.flow, published: input.published, sort_order: sort } as never)
     if (error) throw new Error(error.message)
   }
 }

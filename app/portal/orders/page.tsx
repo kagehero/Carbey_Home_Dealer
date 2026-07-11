@@ -1,7 +1,8 @@
-import { Plus, CheckCircle2, ShoppingCart, Lock } from 'lucide-react'
+import { Plus, CheckCircle2, ShoppingCart, Lock, Repeat } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { listOwnOrders } from '@/lib/portal/orders'
 import { getOwnAntiqueGrace } from '@/lib/portal/trading'
+import { getOwnFlow } from '@/lib/portal/flow'
 import { ORDER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
 import AntiqueGraceBanner from '@/components/portal-dark/AntiqueGraceBanner'
@@ -27,12 +28,14 @@ export default async function MemberOrdersPage({
   searchParams: Promise<{ created?: string; error?: string }>
 }) {
   const session = await requireMember()
-  const [orders, grace] = await Promise.all([
+  const [orders, grace, flowInfo] = await Promise.all([
     listOwnOrders(session.userId),
     getOwnAntiqueGrace(session.userId),
+    getOwnFlow(session.userId),
   ])
   const sp = await searchParams
   const locked = grace ? !grace.tradingAllowed : false
+  const isSemi = flowInfo?.flow === 'semi'
 
   return (
     <div className="space-y-5">
@@ -46,7 +49,18 @@ export default async function MemberOrdersPage({
 
       {sp.created && (
         <div className="flex items-center gap-2 rounded-lg border border-brand-500/30 bg-brand-500/10 px-4 py-3 text-sm text-brand-300">
-          <CheckCircle2 className="h-4 w-4" /> 仕入れオーダーを送信しました。本部からの連絡をお待ちください。
+          <CheckCircle2 className="h-4 w-4" /> 仕入れオーダーを送信しました。次の仕入れは下のフォームから続けて依頼できます。
+        </div>
+      )}
+
+      {/* 半自動売買の運用ループ案内（1仕入案ごとに繰り返す） */}
+      {isSemi && !locked && (
+        <div className="flex items-start gap-2 rounded-lg border border-carbon-700 bg-carbon-800/40 px-4 py-3 text-xs text-slate-400">
+          <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-400" />
+          <span>
+            半自動売買フローでは、<span className="text-slate-200">1台の仕入れごとにオーダーを作成</span>します。
+            1件が完了したら、続けて次の仕入れオーダーを作成して運用を繰り返してください。
+          </span>
         </div>
       )}
       {sp.error === 'model_required' && (

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
+import { listMemberOptions } from '@/lib/portal/crm'
 import { createCustomerAction } from '../actions'
 
 export const dynamic = 'force-dynamic'
@@ -11,10 +12,10 @@ const label = 'mb-1 block text-sm font-medium text-slate-700'
 export default async function NewCustomerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; member?: string }>
 }) {
   await requireFeature('crm')
-  const sp = await searchParams
+  const [sp, memberOptions] = await Promise.all([searchParams, listMemberOptions()])
 
   return (
     <div className="mx-auto max-w-xl">
@@ -42,6 +43,15 @@ export default async function NewCustomerPage({
             <label className={label}>電話</label>
             <input name="phone" className={field} />
           </div>
+        </div>
+        <div>
+          <label className={label}>担当加盟店</label>
+          <select name="member_id" defaultValue={sp.member ?? ''} className={field}>
+            <option value="">（未割当）</option>
+            {memberOptions.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className={label}>住所</label>

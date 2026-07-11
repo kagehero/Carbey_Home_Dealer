@@ -140,14 +140,19 @@ export default async function MemberDetailPage({
       {/* サマリ行 */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">プラン</div>
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="text-xs text-slate-500">プラン / フロー</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             {member.plan ? (
               <Badge tone={member.plan.code?.includes('full') || member.plan.name?.includes('フル') ? 'brand' : 'slate'}>
                 {member.plan.name}
               </Badge>
             ) : (
               <span className="text-sm font-semibold text-amber-600">未割当</span>
+            )}
+            {member.active_flow && (
+              <span className="rounded bg-info-50 px-1.5 py-0.5 text-[10px] font-medium text-info-700">
+                {member.active_flow === 'auto' ? '自動売買' : '半自動売買'}
+              </span>
             )}
           </div>
         </div>
@@ -190,9 +195,14 @@ export default async function MemberDetailPage({
             <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
               <ShoppingCart className="h-4 w-4 text-brand-500" /> オーダー状況
             </span>
-            <Link href={`/admin/orders?member=${member.id}`} className="flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:underline">
-              オーダー管理を見る <ChevronRight className="h-3 w-3" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href={`/admin/crm?member=${member.id}`} className="flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:underline">
+                CRM顧客 <ChevronRight className="h-3 w-3" />
+              </Link>
+              <Link href={`/admin/orders?member=${member.id}`} className="flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:underline">
+                オーダー管理 <ChevronRight className="h-3 w-3" />
+              </Link>
+            </div>
           </div>
           <div className="grid grid-cols-4 gap-2 text-center">
             <div className="rounded-lg bg-slate-50 py-2">

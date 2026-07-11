@@ -1,13 +1,14 @@
 import { requireStaff } from '@/lib/auth/session'
 import { canAccess } from '@/lib/auth/permissions'
 import { unreadAdminCount } from '@/lib/portal/notifications'
+import { getAdminStats } from '@/lib/portal/dashboard'
 import { ROLE_LABEL } from '@/lib/portal/labels'
 import Sidebar, { type NavEntry } from '@/components/shell/Sidebar'
 import Topbar from '@/components/shell/Topbar'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireStaff()
-  const unread = await unreadAdminCount()
+  const [unread, stats] = await Promise.all([unreadAdminCount(), getAdminStats()])
 
   // 要求書／カンプのサイドバー構成。実装済み=リンク、Phase2-4=soon(近日)。
   // permission matrix で権限の無い項目は出さない。
@@ -41,12 +42,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   settingsItems.push({ href: '/admin/terms', label: '利用規約設定', icon: 'contract' })
   settingsItems.push({ href: '/admin/manual', label: '実践マニュアル', icon: 'report' })
 
-  // 本日のアラート (Phase 2 で実データ化。現状はカンプ準拠のダミー)
+  // 本日のアラート（実データ。0件の項目は表示しない）
   const alerts = [
-    { label: 'オンボーディング未完了', count: 12 },
-    { label: '未入金の請求書', count: 8 },
-    { label: '車両報告の遅延', count: 5 },
-  ]
+    { label: '審査待ちの加盟店', count: stats.members.pending },
+    { label: '新規オーダー（受付中）', count: stats.newOrders },
+    { label: '未読チャット', count: stats.unreadChats },
+  ].filter((a) => a.count > 0)
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">

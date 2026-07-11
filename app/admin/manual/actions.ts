@@ -16,10 +16,12 @@ export async function saveSectionAction(formData: FormData) {
   const title = str(formData.get('title'))
   const body = str(formData.get('body')) || null
   const note = str(formData.get('note')) || null
+  const flowRaw = str(formData.get('flow'))
+  const flow = (flowRaw === 'auto' || flowRaw === 'both' ? flowRaw : 'semi') as 'semi' | 'auto' | 'both'
   const published = formData.get('published') === 'on'
   if (!title) redirect('/admin/manual?error=required')
 
-  await saveSection({ id, title, body, note, published })
+  await saveSection({ id, title, body, note, flow, published })
   revalidatePath('/admin/manual')
   revalidatePath('/portal/onboarding/manual')
   redirect('/admin/manual?saved=1')

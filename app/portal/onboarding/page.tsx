@@ -4,10 +4,12 @@ import { Loader2, Lock, Unlock, Rocket, GraduationCap, FileText, ShieldCheck, Bo
 import { requireMember } from '@/lib/auth/session'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
 import { getOwnAntiqueGrace } from '@/lib/portal/trading'
+import { getOwnFlow } from '@/lib/portal/flow'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
 import { DarkProgressRing } from '@/components/portal-dark/DarkCharts'
 import OnboardingFlow from '@/components/portal-dark/OnboardingFlow'
 import AntiqueGraceBanner from '@/components/portal-dark/AntiqueGraceBanner'
+import FlowSwitcher from '@/components/portal-dark/FlowSwitcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,9 +19,10 @@ export const dynamic = 'force-dynamic'
  */
 export default async function OnboardingPage() {
   const session = await requireMember()
-  const [view, grace] = await Promise.all([
+  const [view, grace, flowInfo] = await Promise.all([
     getOwnOnboarding(session.userId),
     getOwnAntiqueGrace(session.userId),
+    getOwnFlow(session.userId),
   ])
 
   if (!view) {
@@ -105,8 +108,9 @@ export default async function OnboardingPage() {
           </DarkCard>
         </div>
 
-        {/* サイド：解放される機能 + 注意 */}
+        {/* サイド：フロー切替 + 解放される機能 + 注意 */}
         <div className="space-y-5">
+          {flowInfo && <FlowSwitcher current={flowInfo.flow} canSwitch={flowInfo.canSwitch} />}
           <DarkCard>
             <DarkCardHeader title="完了で解放される機能" />
             <DarkCardBody className="space-y-2.5">

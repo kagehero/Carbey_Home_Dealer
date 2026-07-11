@@ -1,44 +1,41 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import {
-  CheckCircle2, Loader2, TrendingUp, Car, ClipboardPlus, Search, FileBarChart,
-  MessageSquare, Sparkles, MapPin, Clock, ArrowRight, ChevronRight,
+  CheckCircle2, Loader2, Car, ClipboardPlus, Search, FileBarChart,
+  MessageSquare, ChevronRight,
 } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { getMemberByUserId } from '@/lib/portal/members'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
+import { listOwnOrders } from '@/lib/portal/orders'
 import { listAnnouncements } from '@/lib/portal/announcements'
 import { DarkCard, DarkCardHeader, DarkCardBody, DarkStat } from '@/components/portal-dark/DarkUI'
-import { DarkDonut, DarkProgressRing, DarkLineChart, DarkRadar } from '@/components/portal-dark/DarkCharts'
+import { DarkProgressRing } from '@/components/portal-dark/DarkCharts'
+import { ORDER_STATUS_LABEL } from '@/lib/portal/labels'
 
 export const dynamic = 'force-dynamic'
 
-/* ===== ダミー（Phase 3/4 の売上・AI データ。実装時に差し替え） ===== */
-const SALES_TREND = { labels: ['1月', '2月', '3月', '4月', '5月', '6月'], data: [1450, 1980, 2450, 2720, 2960, 3680] }
-const SALES_STATUS = [
-  { label: '成約済み', value: 18, color: '#f5362b' },
-  { label: '商談中', value: 8, color: '#f59e0b' },
-  { label: '仕入中', value: 4, color: '#64748b' },
-]
-const AI_INSIGHTS = [
-  { icon: 'car', title: '高利益予測車種', main: 'クラウン（2020年式）', metric: '予測利益 +¥520,000' },
-  { icon: 'map', title: '需要急上昇エリア', main: '大阪府', metric: '需要度 +34%' },
-  { icon: 'clock', title: '仕入れ推奨タイミング', main: '今週末〜来週初め', metric: '成功率 78%' },
-]
-
 export default async function MemberDashboardPage() {
   const session = await requireMember()
-  const [member, onboarding, announcements] = await Promise.all([
+  const [member, onboarding, orders, announcements] = await Promise.all([
     getMemberByUserId(session.userId),
     getOwnOnboarding(session.userId),
-    listAnnouncements(true, 3),
+    listOwnOrders(session.userId),
+    listAnnouncements(true, 5),
   ])
 
   const name = member?.member_name ?? session.name ?? 'ゲスト'
   const obPct = onboarding?.pct ?? 0
   const remainingSteps = onboarding ? onboarding.steps.filter((s) => s.status !== 'done').length : 0
   const currentStep = onboarding?.steps.find((s) => s.status === 'current')
-  const totalSales = SALES_STATUS.reduce((s, x) => s + x.value, 0)
+
+  // オーダーの実集計
+  const orderCounts = {
+    total: orders.length,
+    received: orders.filter((o) => o.status === 'received').length,
+    in_progress: orders.filter((o) => o.status === 'in_progress').length,
+    completed: orders.filter((o) => o.status === 'completed').length,
+  }
 
   return (
     <div className="space-y-5">
@@ -56,18 +53,13 @@ export default async function MemberDashboardPage() {
         </div>
       </div>
 
-      {/* ===== KPI 5枚 ===== */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
-        <DarkStat label="今月の売上高" value="¥28,600,000" trend={{ value: '18.6%', dir: 'up' }} sub="前月比"
-          visual={<Sparkline color="#f5362b" />} />
-        <DarkStat label="成約台数（今月）" value="18" unit="台" trend={{ value: '12.5%', dir: 'up' }} sub="前月比"
-          visual={<Sparkline color="#f5362b" />} />
-        <DarkStat label="平均利益率" value="22.4" unit="%" trend={{ value: '3.1pt', dir: 'up' }} sub="前月比"
-          visual={<Bars color="#f5362b" />} />
-        <DarkStat label="オンボーディング進捗" value={obPct} unit="%" sub={remainingSteps > 0 ? `次のステップまであと${remainingSteps}項目` : '完了'}
+      {/* ===== KPI（実データのみ） ===== */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <DarkStat label="オンボーディング進捗" value={obPct} unit="%" sub={remainingSteps > 0 ? `残り${remainingSteps}項目` : '完了'}
           visual={<DarkProgressRing pct={obPct} />} />
-        <DarkStat label="AIスコア（仕入判断）" value="A+" accent sub="非常に良好"
-          visual={<DarkRadar axes={['需要', '価格', '収益性', 'リスク', '相場']} values={[85, 70, 90, 60, 80]} size={92} />} />
+        <DarkStat label="オーダー総数" value={orderCounts.total} unit="件" sub={`受付中 ${orderCounts.received}`} />
+        <DarkStat label="対応中オーダー" value={orderCounts.in_progress} unit="件" sub="本部が対応中" />
+        <DarkStat label="完了オーダー" value={orderCounts.completed} unit="件" sub="納品済み" />
       </div>
 
       {/* ===== オンボーディング進捗 + お知らせ ===== */}
@@ -151,58 +143,6 @@ export default async function MemberDashboardPage() {
         </DarkCard>
       </div>
 
-      {/* ===== 売上推移 + 販売状況 + AIインサイト + クイックアクセス ===== */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
-        {/* 売上推移 */}
-        <DarkCard className="xl:col-span-2">
-          <DarkCardHeader title="売上推移（直近6ヶ月）"
-            action={<span className="rounded-md border border-carbon-600 px-2 py-1 text-xs text-slate-400">直近6ヶ月</span>} />
-          <DarkCardBody>
-            <DarkLineChart labels={SALES_TREND.labels} data={SALES_TREND.data} valueFormat={(v) => v.toLocaleString()} />
-            <p className="mt-1 text-center text-[10px] text-slate-600">（万円）</p>
-          </DarkCardBody>
-        </DarkCard>
-
-        {/* 販売状況 */}
-        <DarkCard>
-          <DarkCardHeader title="販売状況（今月）" />
-          <DarkCardBody>
-            <div className="flex items-center justify-center">
-              <DarkDonut slices={SALES_STATUS} centerTop="合計" centerMain={totalSales} centerUnit="台" />
-            </div>
-            <ul className="mt-4 space-y-2">
-              {SALES_STATUS.map((s) => (
-                <li key={s.label} className="flex items-center gap-2 text-sm">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
-                  <span className="text-slate-300">{s.label}</span>
-                  <span className="ml-auto font-medium text-white">{s.value}台</span>
-                  <span className="w-12 text-right text-xs text-slate-500">({Math.round((s.value / totalSales) * 100)}%)</span>
-                </li>
-              ))}
-            </ul>
-          </DarkCardBody>
-        </DarkCard>
-
-        {/* AI分析インサイト */}
-        <DarkCard>
-          <DarkCardHeader title="AI分析インサイト" action={<span className="text-[10px] text-slate-500">今月の注目ポイント</span>} />
-          <DarkCardBody className="space-y-3">
-            {AI_INSIGHTS.map((ins) => (
-              <div key={ins.title} className="flex items-start gap-3 rounded-lg border border-carbon-700 bg-carbon-800/40 p-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-brand-400">
-                  {ins.icon === 'car' ? <Car className="h-4 w-4" /> : ins.icon === 'map' ? <MapPin className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] text-slate-500">{ins.title}</div>
-                  <div className="truncate text-sm font-semibold text-white">{ins.main}</div>
-                  <div className="text-[11px] text-brand-400">{ins.metric}</div>
-                </div>
-              </div>
-            ))}
-          </DarkCardBody>
-        </DarkCard>
-      </div>
-
       {/* ===== クイックアクセス ===== */}
       <DarkCard>
         <DarkCardHeader title="クイックアクセス" />
@@ -239,24 +179,5 @@ function QuickBtn({ icon, label, href, primary = false, soon = false }: { icon: 
       <span className={primary ? 'text-brand-400' : 'text-slate-400'}>{icon}</span>
       {label}
     </Link>
-  )
-}
-
-/* 小型スパークライン（KPI用ダミー） */
-function Sparkline({ color }: { color: string }) {
-  return (
-    <svg viewBox="0 0 72 32" className="h-8 w-16">
-      <polyline points="0,26 12,22 24,24 36,14 48,16 60,8 72,4" fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  )
-}
-function Bars({ color }: { color: string }) {
-  const hs = [8, 12, 10, 16, 14, 20, 24]
-  return (
-    <svg viewBox="0 0 72 32" className="h-8 w-16">
-      {hs.map((h, i) => (
-        <rect key={i} x={i * 10} y={32 - h} width="6" height={h} rx="1" fill={color} opacity={0.55 + i * 0.06} />
-      ))}
-    </svg>
   )
 }

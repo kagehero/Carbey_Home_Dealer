@@ -261,6 +261,8 @@ export type ManualSectionRow = {
   title: string
   body: string | null
   note: string | null
+  /** このマニュアル項目が属するフロー種別（レビュー⑰）。semi=半自動 / auto=自動 / both=共通 */
+  flow: 'semi' | 'auto' | 'both'
   sort_order: number
   published: boolean
   created_at: string

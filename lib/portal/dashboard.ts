@@ -6,25 +6,27 @@ export type AdminStats = {
   monthlyRevenueYen: number
   newOrders: number
   unreadChats: number
+  orderStatus: { received: number; in_progress: number; completed: number; cancelled: number }
 }
 
-/** 本部ダッシュボードの集計。Phase 1 では orders/chats は未実装のため 0。 */
+/** 本部ダッシュボードの集計。実データのみ（未実装の売上/AI等は扱わない）。 */
 export async function getAdminStats(): Promise<AdminStats> {
   const supabase = createServiceRoleClient()
 
-  const [membersRes, plansRes, paymentsRes] = await Promise.all([
+  const [membersRes, plansRes, paymentsRes, ordersRes, unreadRes] = await Promise.all([
     supabase.from('members').select('status, plan_id'),
     supabase.from('plans').select('id, code, name, display_order').order('display_order'),
     supabase.from('payments').select('amount_yen, payment_date, status'),
+    supabase.from('orders').select('status'),
+    // 本部宛（加盟店発）未読メッセージ総数
+    supabase.from('chat_messages').select('id', { count: 'exact', head: true }).eq('sender_role', 'member').is('read_at', null),
   ])
 
   const m = (membersRes.data ?? []) as { status: string; plan_id: string | null }[]
   const plans = (plansRes.data ?? []) as { id: string; code: string; name: string }[]
-  const payments = (paymentsRes.data ?? []) as {
-    amount_yen: number
-    payment_date: string
-    status: string
-  }[]
+  const payments = (paymentsRes.data ?? []) as { amount_yen: number; payment_date: string; status: string }[]
+  const orders = (ordersRes.data ?? []) as { status: string }[]
+
   const counts = {
     total: m.length,
     active: m.filter((x) => x.status === 'active').length,
@@ -46,12 +48,20 @@ export async function getAdminStats(): Promise<AdminStats> {
     .filter((p) => p.status === 'confirmed' && String(p.payment_date).startsWith(ym))
     .reduce((s, p) => s + (p.amount_yen ?? 0), 0)
 
+  const orderStatus = {
+    received: orders.filter((o) => o.status === 'received').length,
+    in_progress: orders.filter((o) => o.status === 'in_progress').length,
+    completed: orders.filter((o) => o.status === 'completed').length,
+    cancelled: orders.filter((o) => o.status === 'cancelled').length,
+  }
+
   return {
     members: counts,
     planDistribution,
     monthlyRevenueYen,
-    newOrders: 0, // Phase 2
-    unreadChats: 0, // Phase 2
+    newOrders: orderStatus.received,
+    unreadChats: unreadRes.count ?? 0,
+    orderStatus,
   }
 }
 

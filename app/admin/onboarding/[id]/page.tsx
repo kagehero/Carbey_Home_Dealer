@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Circle, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Loader2, Info } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember } from '@/lib/portal/members'
 import { listOnboardingTasks, buildOnboardingView, ensureOnboardingTasks, syncOnboardingStatus } from '@/lib/portal/onboarding'
@@ -36,11 +36,23 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">{member.company_name ?? member.member_name}</h1>
-          <p className="text-sm text-slate-500">スタートアップ進捗の管理</p>
+          <p className="text-sm text-slate-500">スタートアップ進捗の監視</p>
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold text-slate-900">{view.pct}%</div>
           <div className="text-xs text-slate-500">{view.doneTasks}/{view.totalTasks} タスク完了</div>
+        </div>
+      </div>
+
+      {/* 自動化の説明バナー（完全自動化・レビュー⑯） */}
+      <div className="flex items-start gap-2 rounded-xl border border-info-200 bg-info-50 px-4 py-3 text-sm text-info-800">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-info-600" />
+        <div>
+          <p className="font-semibold">進捗はほぼ自動で進みます</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed">
+            契約日の登録・加盟店の手続き（本人確認提出／資金／規約／マニュアル）に応じてタスクは自動で完了します。
+            本部の手動操作が必要なのは<span className="font-semibold">本人確認書類の承認</span>のみです（下記「対応画面へ」から）。
+          </p>
         </div>
       </div>
 
