@@ -52,6 +52,24 @@ export async function createMemberAction(formData: FormData) {
 
   await notifyAdmin('member_registered', '新規会員登録', `${member_name} を登録しました`)
   revalidatePath('/admin/members')
+
+  // 登録と同時にログイン発行（⑤⑥）。チェックあり＆メール登録済みのときだけ。
+  const issueNow = formData.get('issue_login') === 'on'
+  if (issueNow && email) {
+    const pwInput = str(formData.get('password'))
+    try {
+      const { password } = await issueMemberCredentials(m, pwInput ? { password: pwInput } : undefined)
+      redirect(`/admin/members/${m.id}?cred=issued&pw=${encodeURIComponent(password)}`)
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e
+      const msg = e instanceof Error ? e.message : 'unknown'
+      redirect(`/admin/members/${m.id}?cred=error&msg=${encodeURIComponent(msg)}`)
+    }
+  }
+  if (issueNow && !email) {
+    // 発行したいがメール未登録 → 詳細画面で案内
+    redirect(`/admin/members/${m.id}?cred=no_email`)
+  }
   redirect(`/admin/members/${m.id}`)
 }
 

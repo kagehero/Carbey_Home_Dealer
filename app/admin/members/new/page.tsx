@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, KeyRound } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { listPlans } from '@/lib/portal/plans'
 import { createMemberAction } from '../actions'
@@ -39,6 +39,34 @@ export default async function NewMemberPage({
 
       <form action={createMemberAction}>
         <MemberFormFields plans={plans} />
+
+        {/* ===== ログイン発行・権限（⑤⑥：登録と同時に発行） ===== */}
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-brand-500" />
+            <h2 className="text-sm font-semibold text-slate-900">ログイン発行・権限</h2>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="issue_login" defaultChecked className="h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
+            登録と同時にログイン情報を発行する（メールアドレスの登録が必要）
+          </label>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <div className="min-w-[240px] flex-1">
+              <label className="mb-1 block text-xs font-medium text-slate-600">パスワード（空欄で自動生成）</label>
+              <input name="password" placeholder="自動生成する場合は空欄" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">権限</label>
+              <select disabled className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                <option>加盟店（member）</option>
+              </select>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            発行すると、次の画面にメール（ログインID）とパスワードが1回だけ表示されます。加盟店へお伝えいただくとそのままログインできます。
+          </p>
+        </div>
+
         <div className="mt-6 flex justify-end gap-3">
           <Link href="/admin/members" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
             キャンセル
