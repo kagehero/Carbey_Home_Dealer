@@ -102,18 +102,19 @@ export function DarkLineChart({
 }) {
   const W = 640
   const H = height
-  const padX = 40
+  const padL = 56 // Y軸目盛りラベル用（㉑）
+  const padR = 16
   const padTop = 24
   const padBottom = 28
   const max = Math.max(1, ...data)
   const min = Math.min(...data, 0)
   const span = max - min || 1
-  const stepX = (W - padX * 2) / Math.max(1, labels.length - 1)
-  const x = (i: number) => padX + i * stepX
+  const stepX = (W - padL - padR) / Math.max(1, labels.length - 1)
+  const x = (i: number) => padL + i * stepX
   const y = (v: number) => padTop + (1 - (v - min) / span) * (H - padTop - padBottom)
   const line = data.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')
   const area = `${line} L ${x(data.length - 1)} ${H - padBottom} L ${x(0)} ${H - padBottom} Z`
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((r) => padTop + r * (H - padTop - padBottom))
+  const ratios = [0, 0.25, 0.5, 0.75, 1]
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
@@ -123,9 +124,18 @@ export function DarkLineChart({
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      {grid.map((gy, i) => (
-        <line key={i} x1={padX} x2={W - padX} y1={gy} y2={gy} stroke="#1f2b47" strokeWidth={1} />
-      ))}
+      {ratios.map((r, i) => {
+        const gy = padTop + r * (H - padTop - padBottom)
+        const val = max - r * span // 上が最大
+        return (
+          <g key={i}>
+            <line x1={padL} x2={W - padR} y1={gy} y2={gy} stroke="#1f2b47" strokeWidth={1} />
+            <text x={padL - 8} y={gy + 3} textAnchor="end" className="fill-slate-500 text-[10px]">
+              {valueFormat ? valueFormat(val) : Math.round(val).toLocaleString()}
+            </text>
+          </g>
+        )
+      })}
       <path d={area} fill="url(#darkline-fill)" />
       <path d={line} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
       {data.map((v, i) => (

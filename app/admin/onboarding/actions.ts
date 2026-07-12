@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireFeature } from '@/lib/auth/session'
-import { updateTaskStatus, ensureOnboardingTasks } from '@/lib/portal/onboarding'
+import { updateTaskStatus, ensureOnboardingTasks, sendProgressReminder } from '@/lib/portal/onboarding'
 import type { OnboardingTaskStatus } from '@/types/database'
 
 const STATUSES: OnboardingTaskStatus[] = ['todo', 'in_progress', 'done']
@@ -29,4 +29,14 @@ export async function seedTasksAction(formData: FormData) {
   await ensureOnboardingTasks(memberId)
   revalidatePath(`/admin/onboarding/${memberId}`)
   redirect(`/admin/onboarding/${memberId}`)
+}
+
+/** 進捗が遅い加盟店へWEBチャットでリマインドを送る（㉒・本部手動）。 */
+export async function sendReminderAction(formData: FormData) {
+  const session = await requireFeature('members')
+  const memberId = String(formData.get('member_id') ?? '')
+  if (!memberId) redirect('/admin/onboarding')
+  await sendProgressReminder(memberId, session.userId, session.name ?? null)
+  revalidatePath('/admin/onboarding')
+  redirect('/admin/onboarding?reminded=1')
 }

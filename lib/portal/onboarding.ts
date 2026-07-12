@@ -99,6 +99,26 @@ export async function syncOnboardingStatus(memberId: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+/**
+ * 本部が加盟店へ進捗リマインドをWEBチャットで送る（㉒・手動）。
+ * その加盟店の会話を取得/作成し、本部発のメッセージを投稿する。
+ */
+export async function sendProgressReminder(memberId: string, staffUserId: string, staffName: string | null, body?: string): Promise<void> {
+  const supabase = createServiceRoleClient()
+  const { data: conversationId, error: cErr } = await supabase.rpc('get_or_create_conversation', { p_member_id: memberId } as never)
+  if (cErr) throw new Error(cErr.message)
+
+  const text = body?.trim() || 'オンボーディング（スタートアップ）の進捗が停滞しています。未完了のタスクをお進めください。ご不明点はこのチャットでお気軽にご相談ください。'
+  const { error: mErr } = await supabase.from('chat_messages').insert({
+    conversation_id: conversationId as unknown as string,
+    sender_id: staffUserId,
+    sender_role: 'admin',
+    sender_name: staffName,
+    body: text,
+  } as never)
+  if (mErr) throw new Error(mErr.message)
+}
+
 /** member.user_id から自分のオンボーディングビューを取得（加盟店側）。 */
 export async function getOwnOnboarding(userId: string): Promise<OnboardingView | null> {
   const supabase = createServiceRoleClient()
