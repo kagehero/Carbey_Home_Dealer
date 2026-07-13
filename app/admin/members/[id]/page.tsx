@@ -7,6 +7,7 @@ import { listPlans } from '@/lib/portal/plans'
 import { listEvidences } from '@/lib/portal/evidence'
 import { getFunding, LOAN_STEPS } from '@/lib/portal/funding'
 import { getMemberOrderSummary } from '@/lib/portal/orders'
+import { getMemberCapabilities } from '@/lib/portal/capabilities'
 import { listConsentLog } from '@/lib/portal/agreements'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
@@ -31,8 +32,8 @@ export default async function MemberDetailPage({
     getMember(id), listPlans(false), listPayments(id), listEvidences(id),
   ])
   if (!member) notFound()
-  const [funding, consents, orderSummary] = await Promise.all([
-    getFunding(member.id), listConsentLog(member.id), getMemberOrderSummary(member.id),
+  const [funding, consents, orderSummary, capabilities] = await Promise.all([
+    getFunding(member.id), listConsentLog(member.id), getMemberOrderSummary(member.id), getMemberCapabilities(member.id),
   ])
 
   const onboardingPct = member.onboarding_total
@@ -224,6 +225,34 @@ export default async function MemberDetailPage({
           </div>
         </div>
       </div>
+
+      {/* ===== 利用可能機能（プラン・フロー連動で自動制御／㉕） ===== */}
+      {capabilities && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <KeyRound className="h-4 w-4 text-brand-500" /> 利用可能機能（プラン連動・自動制御）
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">
+            プラン・売買フロー・オンボーディング完了状況・古物商猶予に応じて自動で制御されます（手動設定ではありません）。
+            現在のフロー：<span className="font-medium text-slate-700">{capabilities.flow === 'auto' ? '自動売買' : '半自動売買'}</span>
+          </p>
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {capabilities.capabilities.map((c) => (
+              <li key={c.key} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${c.allowed ? 'border-emerald-100 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
+                {c.allowed ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                )}
+                <div className="min-w-0">
+                  <div className={c.allowed ? 'text-slate-800' : 'text-slate-500'}>{c.label}</div>
+                  {!c.allowed && c.reason && <div className="text-[11px] text-slate-400">{c.reason}</div>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* ===== エビデンス確認（本人確認・古物商） ===== */}
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
