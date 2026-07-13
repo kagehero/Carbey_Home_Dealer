@@ -267,9 +267,17 @@ export default async function MemberDetailPage({
               const kindLabel = ev.kind === 'identity' ? '本人確認' : ev.kind === 'antique_license' ? '古物商許可証' : 'その他'
               const docLabel: Record<string, string> = { license: '運転免許証', mynumber: 'マイナンバー', passport: 'パスポート', antique: '古物商許可証', other: 'その他' }
               const url = `/api/portal/evidence/${ev.id}`
+              const isImage = ev.file_type?.startsWith('image/')
               return (
                 <li key={ev.id} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex items-center gap-3">
+                    {/* ㉘ 画像はサムネイルをインライン表示（本部の確認用） */}
+                    {isImage && (
+                      <a href={url} target="_blank" rel="noopener noreferrer" title="クリックで拡大" className="shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt={ev.file_name} className="h-12 w-12 rounded object-cover ring-1 ring-slate-200" loading="lazy" />
+                      </a>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-slate-900">
                         {kindLabel}{ev.doc_type ? `・${docLabel[ev.doc_type]}` : ''}

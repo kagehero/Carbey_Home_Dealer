@@ -1,8 +1,10 @@
-import { Plus, CheckCircle2, ShoppingCart, Lock, Repeat } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, CheckCircle2, ShoppingCart, Lock, Repeat, Bot, ClipboardList } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
 import { listOwnOrders } from '@/lib/portal/orders'
 import { getOwnAntiqueGrace } from '@/lib/portal/trading'
 import { getOwnFlow } from '@/lib/portal/flow'
+import { getOwnOnboarding } from '@/lib/portal/onboarding'
 import { ORDER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
 import AntiqueGraceBanner from '@/components/portal-dark/AntiqueGraceBanner'
@@ -28,14 +30,19 @@ export default async function MemberOrdersPage({
   searchParams: Promise<{ created?: string; error?: string }>
 }) {
   const session = await requireMember()
-  const [orders, grace, flowInfo] = await Promise.all([
+  const [orders, grace, flowInfo, onboarding] = await Promise.all([
     listOwnOrders(session.userId),
     getOwnAntiqueGrace(session.userId),
     getOwnFlow(session.userId),
+    getOwnOnboarding(session.userId),
   ])
   const sp = await searchParams
-  const locked = grace ? !grace.tradingAllowed : false
+  const graceLocked = grace ? !grace.tradingAllowed : false
   const isSemi = flowInfo?.flow === 'semi'
+  const isAuto = flowInfo?.flow === 'auto'
+  const onboardingComplete = onboarding?.unlocked ?? false
+  // フォームを出せるのは「半自動フロー かつ オンボ完了 かつ 取引ロックなし」
+  const canOrder = isSemi && onboardingComplete && !graceLocked
 
   return (
     <div className="space-y-5">
@@ -54,7 +61,7 @@ export default async function MemberOrdersPage({
       )}
 
       {/* 半自動売買の運用ループ案内（1仕入案ごとに繰り返す） */}
-      {isSemi && !locked && (
+      {canOrder && (
         <div className="flex items-start gap-2 rounded-lg border border-carbon-700 bg-carbon-800/40 px-4 py-3 text-xs text-slate-400">
           <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-400" />
           <span>
@@ -71,12 +78,45 @@ export default async function MemberOrdersPage({
           古物商許可証の提出期限を超過しているため、オーダーを送信できません。許可証をアップロードしてください。
         </div>
       )}
+      {sp.error === 'onboarding_incomplete' && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">
+          オンボーディングが完了していないため、オーダーを送信できません。
+        </div>
+      )}
+      {sp.error === 'auto_flow' && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">
+          自動売買フローでは仕入れが自動化されるため、手動オーダーは利用できません。
+        </div>
+      )}
 
-      {/* 新規オーダーフォーム */}
+      {/* 新規オーダーフォーム（㉙半自動のみ／㉚オンボ完了／取引ロックなしのとき） */}
       <DarkCard>
         <DarkCardHeader title={<span className="flex items-center gap-2"><Plus className="h-4 w-4 text-brand-400" /> 新規オーダー</span>} />
         <DarkCardBody>
-          {locked ? (
+          {isAuto ? (
+            /* ㉙ 自動売買フロー：手動オーダーは非対応（準備中案内） */
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <Bot className="h-7 w-7 text-brand-400" />
+              <p className="text-sm font-medium text-white">自動売買フロー</p>
+              <p className="max-w-md text-xs text-slate-400">
+                仕入れはAIにより自動で進められます（自動発注の仕組みは準備中です）。
+                手動での仕入れオーダーは、半自動売買フローに切り替えるとご利用いただけます。
+              </p>
+            </div>
+          ) : !onboardingComplete ? (
+            /* ㉚ オンボーディング未完了：オーダー不可 */
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <ClipboardList className="h-7 w-7 text-amber-400" />
+              <p className="text-sm font-medium text-amber-300">オンボーディングが未完了です</p>
+              <p className="max-w-md text-xs text-slate-400">
+                すべてのスタートアップステップを完了すると、仕入れオーダーを作成できます。
+              </p>
+              <Link href="/portal/onboarding" className="mt-1 rounded-lg bg-brand-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-brand-600">
+                オンボーディングを進める
+              </Link>
+            </div>
+          ) : graceLocked ? (
+            /* 古物商猶予超過：取引停止 */
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <Lock className="h-7 w-7 text-rose-400" />
               <p className="text-sm font-medium text-rose-300">取引機能は停止中です</p>

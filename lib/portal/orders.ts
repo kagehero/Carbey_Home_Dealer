@@ -1,5 +1,7 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
 import { assertTradingAllowed } from '@/lib/portal/trading'
+import { getOwnOnboarding } from '@/lib/portal/onboarding'
+import { getOwnFlow } from '@/lib/portal/flow'
 import type { OrderRow, OrderStatus } from '@/types/database'
 
 export type OrderWithMember = OrderRow & {
@@ -71,6 +73,18 @@ export async function createOwnOrder(
   userId: string,
   input: Pick<OrderRow, 'maker' | 'car_model' | 'year' | 'budget_yen' | 'preferred_color' | 'mileage_max' | 'notes'>,
 ): Promise<OrderRow> {
+  // ㉚ オンボーディング完了ゲート（要件定義書 論点B：未完了はオーダー不可）
+  const onboarding = await getOwnOnboarding(userId)
+  if (!onboarding?.unlocked) {
+    throw new Error('オンボーディングが完了していません。すべてのステップを完了すると仕入れオーダーを作成できます。')
+  }
+
+  // ㉙ オーダーフォームは半自動売買モデルの運用。自動売買フローでは手動オーダー不可。
+  const flowInfo = await getOwnFlow(userId)
+  if (flowInfo && flowInfo.flow !== 'semi') {
+    throw new Error('自動売買フローでは仕入れは自動化されます（手動オーダーは半自動売買フローでのみ利用できます）。')
+  }
+
   // 取引可否ガード：古物商猶予の超過中は発注不可（自動発注の事故防止）
   await assertTradingAllowed(userId)
 
