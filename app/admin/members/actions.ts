@@ -27,6 +27,10 @@ export async function createMemberAction(formData: FormData) {
   const contract_date = str(formData.get('contract_date'))
   if (status === 'active' && !contract_date) redirect('/admin/members/new?error=contract_date_required')
 
+  // ㉛ active にするならプラン必須（未設定を許さない。半自動/自動/両方はプランで表現）
+  const plan_id = str(formData.get('plan_id'))
+  if (status === 'active' && !plan_id) redirect('/admin/members/new?error=plan_required')
+
   // メール重複防止（1メール=1会員。ログイン発行時の衝突を未然に防ぐ）
   const email = str(formData.get('email'))
   if (email && (await findMemberByEmail(email))) redirect('/admin/members/new?error=email_duplicate')
@@ -41,7 +45,7 @@ export async function createMemberAction(formData: FormData) {
     delivery_name: str(formData.get('delivery_name')),
     delivery_address: str(formData.get('delivery_address')),
     delivery_contact: str(formData.get('delivery_contact')),
-    plan_id: str(formData.get('plan_id')),
+    plan_id,
     contract_date,
     status,
     joining_fee_yen: num(formData.get('joining_fee_yen')),
@@ -80,10 +84,12 @@ export async function updateMemberAction(formData: FormData) {
 
   const status = (str(formData.get('status')) ?? undefined) as MemberStatus | undefined
   const contract_date = str(formData.get('contract_date'))
-  // active（稼働開始）にするなら契約日は必須。フォーム未入力でも既存に入っていればOK。
-  if (status === 'active' && !contract_date) {
+  const plan_id = str(formData.get('plan_id'))
+  // active（稼働開始）にするなら契約日・プランは必須。フォーム未入力でも既存に入っていればOK。
+  if (status === 'active' && (!contract_date || !plan_id)) {
     const current = await getMember(id)
-    if (!current?.contract_date) redirect(`/admin/members/${id}?error=contract_date_required`)
+    if (!contract_date && !current?.contract_date) redirect(`/admin/members/${id}?error=contract_date_required`)
+    if (!plan_id && !current?.plan_id) redirect(`/admin/members/${id}?error=plan_required`) // ㉛
   }
 
   // メール重複防止（自分自身は除外）。他会員が同じメールを使っていれば拒否。
@@ -100,7 +106,7 @@ export async function updateMemberAction(formData: FormData) {
     delivery_name: str(formData.get('delivery_name')),
     delivery_address: str(formData.get('delivery_address')),
     delivery_contact: str(formData.get('delivery_contact')),
-    plan_id: str(formData.get('plan_id')),
+    plan_id,
     contract_date,
     status,
     payment_status: (str(formData.get('payment_status')) ?? undefined) as PaymentStatus | undefined,

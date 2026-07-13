@@ -57,6 +57,19 @@ export default async function AdminManualPage({
             </select>
             <p className="mt-1 text-[11px] text-slate-400">加盟店には、そのプラン/フローに該当する項目だけが表示されます。</p>
           </div>
+          {/* ㉜ 動画URL（YouTube/Vimeo等の埋め込み再生） */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">動画URL（任意・YouTube / Vimeo）</label>
+            <input name="video_url" defaultValue={editing?.video_url ?? ''} placeholder="https://www.youtube.com/watch?v=..." className={field} />
+          </div>
+          {/* ㉜ 添付ファイル（PDF等のマニュアルデータ） */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">添付ファイル（任意・PDF等、20MBまで）</label>
+            <input type="file" name="attachment" accept="application/pdf,image/*,.doc,.docx,.ppt,.pptx,.xls,.xlsx" className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-brand-700 hover:file:bg-brand-100" />
+            {editing?.attachment_name && (
+              <p className="mt-1 text-[11px] text-slate-500">現在の添付：{editing.attachment_name}（新しいファイルを選ぶと差し替わります）</p>
+            )}
+          </div>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" name="published" defaultChecked={editing?.published ?? true} className="h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
             公開する（加盟店のチェック対象になります）

@@ -263,6 +263,11 @@ export type ManualSectionRow = {
   note: string | null
   /** このマニュアル項目が属するフロー種別（レビュー⑰）。semi=半自動 / auto=自動 / both=共通 */
   flow: 'semi' | 'auto' | 'both'
+  /** マニュアル動画URL（YouTube/Vimeo等・埋め込み再生／㉜） */
+  video_url: string | null
+  /** マニュアル添付ファイルの Storage パス（manual-media バケット／㉜） */
+  attachment_path: string | null
+  attachment_name: string | null
   sort_order: number
   published: boolean
   created_at: string

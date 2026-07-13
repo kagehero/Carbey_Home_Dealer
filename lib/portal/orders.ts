@@ -4,6 +4,13 @@ import { getOwnOnboarding } from '@/lib/portal/onboarding'
 import { getOwnFlow } from '@/lib/portal/flow'
 import type { OrderRow, OrderStatus } from '@/types/database'
 
+/**
+ * ㉜ STEP5：オーダーのオンボーディング完了ゲート（㉚）の有効/無効。
+ * クライアント要望「今回はオーダー権限を解放、次回は制限をかけて再確認」に対応。
+ * true に戻すと「オンボーディング完了までオーダー不可」（要件定義書 論点B）が再度有効になる。
+ */
+export const ORDER_ONBOARDING_GATE = false
+
 export type OrderWithMember = OrderRow & {
   member: { id: string; member_name: string; company_name: string | null } | null
 }
@@ -74,9 +81,12 @@ export async function createOwnOrder(
   input: Pick<OrderRow, 'maker' | 'car_model' | 'year' | 'budget_yen' | 'preferred_color' | 'mileage_max' | 'notes'>,
 ): Promise<OrderRow> {
   // ㉚ オンボーディング完了ゲート（要件定義書 論点B：未完了はオーダー不可）
-  const onboarding = await getOwnOnboarding(userId)
-  if (!onboarding?.unlocked) {
-    throw new Error('オンボーディングが完了していません。すべてのステップを完了すると仕入れオーダーを作成できます。')
+  // ㉜ STEP5：今回は解放中（ORDER_ONBOARDING_GATE=false）。次回検証時に true へ戻す。
+  if (ORDER_ONBOARDING_GATE) {
+    const onboarding = await getOwnOnboarding(userId)
+    if (!onboarding?.unlocked) {
+      throw new Error('オンボーディングが完了していません。すべてのステップを完了すると仕入れオーダーを作成できます。')
+    }
   }
 
   // ㉙ オーダーフォームは半自動売買モデルの運用。自動売買フローでは手動オーダー不可。

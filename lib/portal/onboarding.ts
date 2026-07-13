@@ -24,6 +24,64 @@ export type OnboardingView = {
   unlocked: boolean
 }
 
+/** 素人にも分かる「次のアクション」ガイド（㉜追加）。 */
+export type NextAction = {
+  /** 何をするか（例：本人確認書類を提出する） */
+  title: string
+  /** どうすればよいか（一言の説明） */
+  hint: string
+  /** 遷移先（該当ページ）。null=本部の対応待ちで加盟店の操作不要 */
+  href: string | null
+  /** 操作主体：'member'=あなたが行う / 'admin'=本部の対応待ち */
+  actor: 'member' | 'admin'
+  /** 全完了なら done=true（次アクション不要） */
+  done: boolean
+}
+
+/** link_key → 手続きページ・平易な説明。 */
+const NEXT_GUIDE: Record<string, { href: string; verb: string }> = {
+  contract: { href: '/portal/onboarding', verb: '本部が契約を登録すると自動で完了します' },
+  identity: { href: '/portal/onboarding/evidence', verb: '本人確認書類（免許証・マイナンバー・パスポートのいずれか）を提出します' },
+  antique_license: { href: '/portal/onboarding/evidence', verb: '古物商許可証を提出します（任意・6ヶ月以内）' },
+  funding: { href: '/portal/onboarding/funding', verb: '資金準備（自己資金／資金調達）の手続きを進めます' },
+  terms: { href: '/portal/terms', verb: '利用規約を確認して同意します' },
+  manual: { href: '/portal/onboarding/manual', verb: '実践マニュアルを確認してチェックします' },
+  completion: { href: '/portal/onboarding', verb: '他の項目がすべて完了すると自動で達成されます' },
+}
+
+/**
+ * 次にやるべき1タスクを特定して案内を返す。
+ * 現在ステップの未完了タスクのうち sort_order が最小のものを対象にする。
+ */
+export function getNextAction(view: OnboardingView): NextAction {
+  if (view.unlocked) {
+    return { title: 'オンボーディング完了', hint: 'すべての機能が解放されました。', href: '/portal/dashboard', actor: 'member', done: true }
+  }
+  // 未完了タスクを sort_order 順で先頭から探す（optional は後回し）
+  const allTasks = view.steps.flatMap((s) => (s.locked ? [] : s.tasks))
+  const pending = allTasks
+    .filter((t) => t.status !== 'done')
+    .sort((a, b) => (a.optional === b.optional ? a.sort_order - b.sort_order : a.optional ? 1 : -1))
+  const next = pending[0]
+  if (!next) {
+    return { title: '次のステップの解放待ち', hint: '前のステップの完了をお待ちください。', href: '/portal/onboarding', actor: 'admin', done: false }
+  }
+
+  const guide = next.link_key ? NEXT_GUIDE[next.link_key] : undefined
+  // 本部の対応待ち：manual 完了方式かつ link_key が本部承認系（identity/antique）で提出済みの可能性
+  const isAdminWait = next.completion_type === 'manual' && !next.link_key
+  if (isAdminWait) {
+    return { title: next.title, hint: '本部の確認をお待ちください。', href: null, actor: 'admin', done: false }
+  }
+  return {
+    title: next.title,
+    hint: guide?.verb ?? 'このタスクを進めてください。',
+    href: guide?.href ?? '/portal/onboarding',
+    actor: 'member',
+    done: false,
+  }
+}
+
 /** 加盟店のオンボーディングタスク一覧（生）。 */
 export async function listOnboardingTasks(memberId: string): Promise<OnboardingTaskRow[]> {
   const supabase = createServiceRoleClient()

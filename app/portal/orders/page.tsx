@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Plus, CheckCircle2, ShoppingCart, Lock, Repeat, Bot, ClipboardList } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
-import { listOwnOrders } from '@/lib/portal/orders'
+import { listOwnOrders, ORDER_ONBOARDING_GATE } from '@/lib/portal/orders'
 import { getOwnAntiqueGrace } from '@/lib/portal/trading'
 import { getOwnFlow } from '@/lib/portal/flow'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
@@ -40,8 +40,9 @@ export default async function MemberOrdersPage({
   const graceLocked = grace ? !grace.tradingAllowed : false
   const isSemi = flowInfo?.flow === 'semi'
   const isAuto = flowInfo?.flow === 'auto'
-  const onboardingComplete = onboarding?.unlocked ?? false
-  // フォームを出せるのは「半自動フロー かつ オンボ完了 かつ 取引ロックなし」
+  // ㉜ STEP5：オンボ完了ゲートは今回解放中（ORDER_ONBOARDING_GATE=false）。
+  const onboardingComplete = ORDER_ONBOARDING_GATE ? (onboarding?.unlocked ?? false) : true
+  // フォームを出せるのは「半自動フロー かつ （ゲート無効 or オンボ完了） かつ 取引ロックなし」
   const canOrder = isSemi && onboardingComplete && !graceLocked
 
   return (
