@@ -1105,6 +1105,1199 @@ grant all on portal.announcements to service_role;
 
 
 -- #####################################################################
+
+
+-- #####################################################################
+-- ## 010_onboarding_gating.sql
+-- #####################################################################
+
+-- =====================================================================
+-- Carbey Portal — Phase 2 改修: フローチャート型・ゲート式オンボーディング
+-- =====================================================================
+-- クライアント要件:「加盟者が勝手に先行できない・飛ばせない・登録しないと開始できない」
+--   - ステップ順厳守（前ステップ完了まで次ステップはロック）
+--   - タスクは加盟店のアクションで自動完了（completion_type='auto'）
+--   - 一部は本部承認（completion_type='manual'）
+-- 冪等化のため if exists / or replace を併用。
+-- =====================================================================
+
+-- 完了方法の区分（auto=加盟店の操作で完了 / manual=本部承認で完了）
+alter table portal.onboarding_tasks add column if not exists completion_type text not null default 'manual'
+  check (completion_type in ('auto', 'manual'));
+
+-- ステップの並び順（同一 step_key の最小 sort_order でステップ順を決める用）
+-- 既存の sort_order を流用するため追加カラムは不要。
+
+-- ---------------------------------------------------------------------
+-- 既定タスク生成を「ゲート式」の定義に更新（completion_type つき）
+-- 物販(eBay等)の具体項目は使わず、中古車FC向けの汎用ステップにする。
+-- ---------------------------------------------------------------------
+create or replace function portal.seed_onboarding_tasks(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+begin
+  if exists (select 1 from portal.onboarding_tasks where member_id = p_member_id) then
+    return;
+  end if;
+
+  insert into portal.onboarding_tasks (member_id, step_key, step_label, title, sort_order, completion_type) values
+    -- STEP1 契約・初期設定
+    (p_member_id, 'contract',  '契約・初期設定', '加盟契約の締結',                     10, 'manual'),
+    (p_member_id, 'contract',  '契約・初期設定', 'アカウント発行・初回ログイン',       20, 'auto'),
+    (p_member_id, 'contract',  '契約・初期設定', 'プロフィール（連絡先・陸送先）の登録', 30, 'auto'),
+    -- STEP2 本人確認・必要書類
+    (p_member_id, 'documents', '本人確認・必要書類', '本人確認書類の提出',             40, 'manual'),
+    (p_member_id, 'documents', '本人確認・必要書類', '古物商許可証の提出',             50, 'manual'),
+    (p_member_id, 'documents', '本人確認・必要書類', '販売店情報の登録',               60, 'auto'),
+    -- STEP3 決済・資金
+    (p_member_id, 'funding',   '決済・資金設定',   '決済情報（口座/カード）の登録',     70, 'auto'),
+    (p_member_id, 'funding',   '決済・資金設定',   '利用規約への同意',                 80, 'auto'),
+    -- STEP4 トレーニング（動画→確認）
+    (p_member_id, 'training',  'トレーニング',     '市場分析マニュアルの視聴',         90, 'auto'),
+    (p_member_id, 'training',  'トレーニング',     '仕入れ判断マニュアルの視聴',       100, 'auto'),
+    (p_member_id, 'training',  'トレーニング',     '出品・販売ルールの確認',           110, 'auto'),
+    -- STEP5 運用開始準備
+    (p_member_id, 'launch',    '運用開始準備',     '初回オーダーの作成',               120, 'auto'),
+    (p_member_id, 'launch',    '運用開始準備',     '全項目完了の確認',                 130, 'manual');
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 加盟店による自己完了（ゲート厳守）。
+--   - completion_type='auto' のタスクのみ
+--   - そのタスクが属するステップが「現在進行中（ロックされていない）」場合のみ
+--   - 前ステップが未完了ならエラー（飛ばせない）
+-- ---------------------------------------------------------------------
+create or replace function portal.complete_own_task(p_user_id uuid, p_task_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_member uuid;
+  v_task   record;
+  v_prev_incomplete int;
+begin
+  -- 本人の member を特定
+  select id into v_member from portal.members where user_id = p_user_id;
+  if v_member is null then raise exception 'member not found'; end if;
+
+  -- タスク取得（本人のものか・auto か）
+  select * into v_task from portal.onboarding_tasks
+   where id = p_task_id and member_id = v_member;
+  if v_task is null then raise exception 'task not found'; end if;
+  if v_task.completion_type <> 'auto' then raise exception 'このタスクは本部の確認が必要です'; end if;
+  if v_task.status = 'done' then return; end if;
+
+  -- ゲート判定: このタスクより前の sort_order のタスクに未完了があれば拒否（飛ばせない）
+  select count(*) into v_prev_incomplete
+    from portal.onboarding_tasks
+   where member_id = v_member and sort_order < v_task.sort_order and status <> 'done';
+  if v_prev_incomplete > 0 then
+    raise exception '前のステップが未完了です。順番に進めてください。';
+  end if;
+
+  update portal.onboarding_tasks
+     set status = 'done', completed_at = now()
+   where id = p_task_id;
+end;
+$$;
+
+create or replace function public.portal_complete_own_task(p_user_id uuid, p_task_id uuid)
+returns void language sql security definer set search_path = public, portal as $$
+  select portal.complete_own_task(p_user_id, p_task_id);
+$$;
+
+-- 既存メンバーのタスクに completion_type を後付け（前バージョンで生成済みのもの）
+update portal.onboarding_tasks set completion_type = 'auto'
+ where completion_type = 'manual'
+   and title in ('アカウント発行・初回ログイン','プロフィール（連絡先・陸送先）の登録','販売店情報の登録',
+                 '決済情報（口座/カード）の登録','利用規約への同意','市場の見方を学ぶ','AI壁打ちで候補整理を体験',
+                 '出品ルールの確認','初回仕入れオーダー','初回出品');
+
+
+-- #####################################################################
+
+
+-- #####################################################################
+-- ## 011_evidences.sql
+-- #####################################################################
+
+-- =====================================================================
+-- Carbey Portal — オンボーディング再設計 フェーズ①: エビデンス管理
+-- =====================================================================
+-- クライアント要件（レビュー ⑨⑩）:
+--   - 本人確認：顔写真付き身分証（免許/マイナンバー/パスポート）を提出・義務化
+--   - 古物商許可証：取得猶予6ヶ月以内でデータ格納。未取得でもスタート可
+--   - 本部が顧客ごとにエビデンスを管理（承認/却下）
+--   - 加盟店はドラッグ&ドロップでアップロード、スマホでもDL可能
+--
+-- ファイル本体は private バケット member-evidences に保存し、
+-- 表示/DLはサーバープロキシ（署名URLを露出しない）で行う。
+-- 冪等化のため if exists / on conflict を併用。
+-- =====================================================================
+
+create table if not exists portal.evidences (
+  id          uuid primary key default gen_random_uuid(),
+  member_id   uuid not null references portal.members(id) on delete cascade,
+  -- 種別
+  kind        text not null check (kind in ('identity', 'antique_license', 'other')),
+  -- 身分証の種類（本人確認のとき。顔写真付きに限定）
+  doc_type    text check (doc_type in ('license', 'mynumber', 'passport', 'antique', 'other')),
+  -- ファイル
+  storage_path text not null,
+  file_name   text not null,
+  file_type   text,
+  file_size   int,
+  -- 審査
+  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_at timestamptz,
+  note        text,          -- 本部メモ・却下理由
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists idx_evidences_member on portal.evidences(member_id);
+create index if not exists idx_evidences_kind   on portal.evidences(member_id, kind);
+
+-- ---------------------------------------------------------------------
+-- Storage: private バケット member-evidences
+-- ---------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('member-evidences', 'member-evidences', false)
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------
+-- RLS
+-- ---------------------------------------------------------------------
+alter table portal.evidences enable row level security;
+
+-- 閲覧: 本部スタッフは全件、加盟店は自分の分のみ
+drop policy if exists portal_evidences_read on portal.evidences;
+create policy portal_evidences_read on portal.evidences
+  for select using (
+    portal.is_staff(auth.uid())
+    or member_id = portal.current_member_id(auth.uid())
+  );
+
+-- 追加（アップロード）: 加盟店は自分の member_id でのみ
+drop policy if exists portal_evidences_member_insert on portal.evidences;
+create policy portal_evidences_member_insert on portal.evidences
+  for insert with check (
+    member_id = portal.current_member_id(auth.uid())
+  );
+
+-- 削除: 加盟店は自分の pending のみ削除可（再提出のため）／本部は全件
+drop policy if exists portal_evidences_delete on portal.evidences;
+create policy portal_evidences_delete on portal.evidences
+  for delete using (
+    portal.is_staff(auth.uid())
+    or (member_id = portal.current_member_id(auth.uid()) and status = 'pending')
+  );
+
+-- 更新（承認/却下）: 本部のみ
+drop policy if exists portal_evidences_admin_update on portal.evidences;
+create policy portal_evidences_admin_update on portal.evidences
+  for update using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+-- GRANT（新規テーブル）
+grant select, insert, delete on portal.evidences to authenticated;
+grant update on portal.evidences to authenticated;
+grant all on portal.evidences to service_role;
+
+-- Storage の select ポリシー（認証ユーザー・実配信はサーバープロキシ経由）
+drop policy if exists member_evidences_read on storage.objects;
+create policy member_evidences_read on storage.objects
+  for select using (bucket_id = 'member-evidences' and auth.uid() is not null);
+
+
+-- #####################################################################
+
+
+-- #####################################################################
+-- ## 012_agreements.sql
+-- #####################################################################
+
+-- =====================================================================
+-- Carbey Portal — オンボーディング再設計 フェーズ②: 利用規約
+-- =====================================================================
+-- クライアント要件（レビュー ⑫⑬）:
+--   - 資金調達の有無に関わらず、利用規約に同意する を押下させて遷移
+--   - 加盟店画面：利用規約 確認ページ
+--   - 本部画面：利用規約の設定ページ（編集・公開）
+--
+-- agreements       : 本部が編集・公開する利用規約（バージョン管理）
+-- agreement_consents : 加盟店の同意記録
+-- 冪等化のため if exists / on conflict を併用。
+-- =====================================================================
+
+create table if not exists portal.agreements (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,
+  body        text not null,            -- 規約本文（プレーン/マークダウン）
+  version     int not null default 1,
+  published   boolean not null default false,
+  author_id   uuid references auth.users(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_agreements_published on portal.agreements(published, created_at desc);
+
+drop trigger if exists trg_agreements_touch on portal.agreements;
+create trigger trg_agreements_touch
+  before update on portal.agreements
+  for each row execute function portal.touch_updated_at();
+
+create table if not exists portal.agreement_consents (
+  id           uuid primary key default gen_random_uuid(),
+  member_id    uuid not null references portal.members(id) on delete cascade,
+  agreement_id uuid not null references portal.agreements(id) on delete cascade,
+  agreed_at    timestamptz not null default now(),
+  unique (member_id, agreement_id)
+);
+
+create index if not exists idx_consents_member on portal.agreement_consents(member_id);
+
+-- ---------------------------------------------------------------------
+-- RLS
+-- ---------------------------------------------------------------------
+alter table portal.agreements enable row level security;
+alter table portal.agreement_consents enable row level security;
+
+-- 規約: 閲覧はログインユーザー全員（公開分）／編集は本部
+drop policy if exists portal_agreements_read on portal.agreements;
+create policy portal_agreements_read on portal.agreements
+  for select using (auth.uid() is not null);
+drop policy if exists portal_agreements_write on portal.agreements;
+create policy portal_agreements_write on portal.agreements
+  for all using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+-- 同意記録: 本部は全件閲覧／加盟店は自分の分の閲覧・作成
+drop policy if exists portal_consents_read on portal.agreement_consents;
+create policy portal_consents_read on portal.agreement_consents
+  for select using (
+    portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid())
+  );
+drop policy if exists portal_consents_insert on portal.agreement_consents;
+create policy portal_consents_insert on portal.agreement_consents
+  for insert with check (member_id = portal.current_member_id(auth.uid()));
+
+-- GRANT
+grant select, insert, update, delete on portal.agreements to authenticated;
+grant select, insert on portal.agreement_consents to authenticated;
+grant all on portal.agreements, portal.agreement_consents to service_role;
+
+-- ---------------------------------------------------------------------
+-- 既定の利用規約（初回のみ・空なら投入）
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from portal.agreements) then
+    insert into portal.agreements (title, body, version, published) values (
+      'カーベイホームディーラー 加盟店利用規約',
+      E'第1条（総則）\n本規約は、カーベイホームディーラー加盟店プラットフォーム（以下「本サービス」）の利用条件を定めるものです。\n\n第2条（加盟店の義務）\n加盟店は、本サービスの利用にあたり、法令および本規約を遵守するものとします。\n\n第3条（本人確認・古物商許可）\n加盟店は、本部の求めに応じて本人確認書類を提出し、古物営業に必要な許可を取得するものとします。\n\n第4条（禁止事項）\n加盟店は、本サービスを不正に利用してはなりません。\n\n第5条（免責）\n本部は、本サービスの利用により生じた損害について、法令に定める場合を除き責任を負いません。\n\n（本規約は本部により随時更新されます。最新の内容をご確認ください。）',
+      1, true
+    );
+  end if;
+end $$;
+
+
+-- #####################################################################
+
+
+-- #####################################################################
+-- ## 013_manual.sql
+-- #####################################################################
+
+-- =====================================================================
+-- Carbey Portal — オンボーディング再設計 フェーズ③: 実践マニュアル（動的）
+-- =====================================================================
+-- クライアント要件（レビュー ⑭⑮）:
+--   - 実践マニュアルはチェックボックス形式。全項目チェックで次へ進める
+--   - 項目：中古車市場の基礎/相場の見方/AI壁打ちで候補整理/仕入れ基準/
+--           出品ルール/禁止事項・注意事項/理解度チェック/修了
+--   - ローンチ前後で本部が内容を埋める。項目はバックエンドで追加でき、
+--     コメントや内容も編集できる（動的なマニュアルCMS）
+--
+-- manual_sections  : 本部が管理する項目（追加/編集/公開/並び替え）
+-- manual_progress  : 加盟店のチェック状況
+-- 冪等化のため if exists / on conflict を併用。
+-- =====================================================================
+
+create table if not exists portal.manual_sections (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,          -- 項目名
+  body        text,                    -- 内容（本部がローンチ後に追記）
+  note        text,                    -- 本部コメント
+  sort_order  int not null default 0,
+  published   boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_manual_sections_order on portal.manual_sections(sort_order);
+
+drop trigger if exists trg_manual_sections_touch on portal.manual_sections;
+create trigger trg_manual_sections_touch
+  before update on portal.manual_sections
+  for each row execute function portal.touch_updated_at();
+
+create table if not exists portal.manual_progress (
+  id          uuid primary key default gen_random_uuid(),
+  member_id   uuid not null references portal.members(id) on delete cascade,
+  section_id  uuid not null references portal.manual_sections(id) on delete cascade,
+  checked_at  timestamptz not null default now(),
+  unique (member_id, section_id)
+);
+
+create index if not exists idx_manual_progress_member on portal.manual_progress(member_id);
+
+-- ---------------------------------------------------------------------
+-- RLS
+-- ---------------------------------------------------------------------
+alter table portal.manual_sections enable row level security;
+alter table portal.manual_progress enable row level security;
+
+-- 項目: 閲覧はログインユーザー全員（公開分）／編集は本部
+drop policy if exists portal_manual_sections_read on portal.manual_sections;
+create policy portal_manual_sections_read on portal.manual_sections
+  for select using (auth.uid() is not null);
+drop policy if exists portal_manual_sections_write on portal.manual_sections;
+create policy portal_manual_sections_write on portal.manual_sections
+  for all using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+-- チェック: 本部は全件閲覧／加盟店は自分の分の閲覧・作成・削除（チェック外し）
+drop policy if exists portal_manual_progress_read on portal.manual_progress;
+create policy portal_manual_progress_read on portal.manual_progress
+  for select using (
+    portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid())
+  );
+drop policy if exists portal_manual_progress_insert on portal.manual_progress;
+create policy portal_manual_progress_insert on portal.manual_progress
+  for insert with check (member_id = portal.current_member_id(auth.uid()));
+drop policy if exists portal_manual_progress_delete on portal.manual_progress;
+create policy portal_manual_progress_delete on portal.manual_progress
+  for delete using (member_id = portal.current_member_id(auth.uid()));
+
+-- GRANT
+grant select, insert, update, delete on portal.manual_sections to authenticated;
+grant select, insert, delete on portal.manual_progress to authenticated;
+grant all on portal.manual_sections, portal.manual_progress to service_role;
+
+-- ---------------------------------------------------------------------
+-- 既定の実践マニュアル項目（初回のみ・空なら投入）
+-- 中身（body）は空。ローンチ後に本部が埋める前提。
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from portal.manual_sections) then
+    insert into portal.manual_sections (title, sort_order) values
+      ('中古車市場の基礎',       10),
+      ('相場の見方',             20),
+      ('AI壁打ちで候補整理',     30),
+      ('仕入れ基準',             40),
+      ('出品ルール',             50),
+      ('禁止事項・注意事項',     60),
+      ('理解度チェック',         70),
+      ('修了',                   80);
+  end if;
+end $$;
+
+
+-- #####################################################################
+-- ## 014_funding.sql
+-- #####################################################################
+-- Carbey Portal — オンボーディング再設計 フェーズ④: 資金準備（分岐）
+-- クライアント要件（レビュー ⑪ / ⑭画像 ②資金準備）:
+--   自己資金で始める場合: 自己資金額を登録 → 本部確認 → 完了
+--   資金調達を利用する場合:
+--     資金調達申請 → ヒアリング → 必要書類提出 → 事業計画書作成 →
+--     金融機関へ申請 → 融資審査 → 融資契約 → 着金確認 → 完了
+--   自動/手動を分離。手動は最小限。
+-- funding_applications: 加盟店ごとに1つ。method で分岐。
+--   loan の各ステップは step_status(jsonb) で 'todo'|'done' を保持。
+
+create table if not exists portal.funding_applications (
+  id           uuid primary key default gen_random_uuid(),
+  member_id    uuid not null unique references portal.members(id) on delete cascade,
+  method       text check (method in ('self', 'loan')),   -- 未選択なら null
+  self_amount_yen bigint,                                  -- 自己資金の場合
+  self_confirmed boolean not null default false,          -- 本部確認（自己資金）
+  -- 資金調達（loan）の各ステップ状態。キー=ステップ, 値='todo'|'done'
+  step_status  jsonb not null default '{}'::jsonb,
+  status       text not null default 'in_progress' check (status in ('in_progress', 'completed')),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create index if not exists idx_funding_member on portal.funding_applications(member_id);
+
+drop trigger if exists trg_funding_touch on portal.funding_applications;
+create trigger trg_funding_touch
+  before update on portal.funding_applications
+  for each row execute function portal.touch_updated_at();
+
+alter table portal.funding_applications enable row level security;
+
+drop policy if exists portal_funding_read on portal.funding_applications;
+create policy portal_funding_read on portal.funding_applications
+  for select using (
+    portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid())
+  );
+
+-- 加盟店: 自分の分の作成・更新（方法選択・自己資金額・加盟店側ステップ）
+drop policy if exists portal_funding_member_insert on portal.funding_applications;
+create policy portal_funding_member_insert on portal.funding_applications
+  for insert with check (member_id = portal.current_member_id(auth.uid()));
+drop policy if exists portal_funding_member_update on portal.funding_applications;
+create policy portal_funding_member_update on portal.funding_applications
+  for update using (member_id = portal.current_member_id(auth.uid())) with check (member_id = portal.current_member_id(auth.uid()));
+
+-- 本部: 全件更新（承認・本部側ステップ）
+drop policy if exists portal_funding_staff_update on portal.funding_applications;
+create policy portal_funding_staff_update on portal.funding_applications
+  for update using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+grant select, insert, update on portal.funding_applications to authenticated;
+grant all on portal.funding_applications to service_role;
+
+
+-- #####################################################################
+-- ## 015_onboarding_sync.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — オンボーディング再設計 フェーズ⑤: フロー統合（自動同期）
+-- =====================================================================
+-- クライアント要件（⑨〜⑮ の統合）:
+--   「加盟者が勝手に先行できない・飛ばせない・登録をしないと開始できない・自動化する」
+--
+-- これまで onboarding_tasks のゲートは各機能（本人確認/資金/規約/マニュアル）の
+-- 実体と切り離されていた。本フェーズで両者を link_key で接続し、
+-- 実体の状態からタスク完了を「自動判定」する（ボタンで勝手に消せない）。
+--
+--   link_key            自動完了条件
+--   ------------------  --------------------------------------------------
+--   identity            本人確認エビデンス(kind=identity)が approved
+--   antique_license     古物商(kind=antique_license)が approved ※optional
+--   funding             funding_applications.status = 'completed'
+--   terms               有効な利用規約に同意済み
+--   manual              公開マニュアルを全チェック
+--
+-- optional=true のタスク（古物商）は「未取得でもスタート可・6ヶ月猶予」のため
+-- ステップ完了/機能解放の判定から除外する（⑨）。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) カラム追加
+-- ---------------------------------------------------------------------
+alter table portal.onboarding_tasks
+  add column if not exists link_key text;         -- 実体機能への接続キー（null=手動/従来）
+alter table portal.onboarding_tasks
+  add column if not exists optional boolean not null default false;  -- ゲート対象外（古物商など）
+
+-- ---------------------------------------------------------------------
+-- 2) 既定タスク生成を「実体連携」版に更新
+--    物販(eBay等)の具体項目は使わず、中古車FC向けの汎用ステップ。
+--    completion_type='auto' は加盟店操作 / 'manual' は本部承認。
+--    link_key が付くタスクは sync により自動で done になる。
+-- ---------------------------------------------------------------------
+create or replace function portal.seed_onboarding_tasks(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+begin
+  if exists (select 1 from portal.onboarding_tasks where member_id = p_member_id) then
+    return;
+  end if;
+
+  insert into portal.onboarding_tasks
+    (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+    -- STEP1 契約・初期設定
+    (p_member_id, 'contract',  '契約・初期設定',      '加盟契約の締結',                      10, 'manual', null,              false),
+    (p_member_id, 'contract',  '契約・初期設定',      'アカウント発行・初回ログイン',        20, 'auto',   null,              false),
+    (p_member_id, 'contract',  '契約・初期設定',      'プロフィール（連絡先・陸送先）の登録',  30, 'auto',   null,              false),
+    -- STEP2 本人確認・必要書類（実体：evidences）
+    (p_member_id, 'documents', '本人確認・必要書類',  '本人確認書類の提出・承認',            40, 'manual', 'identity',        false),
+    (p_member_id, 'documents', '本人確認・必要書類',  '古物商許可証の提出（6ヶ月以内）',      50, 'manual', 'antique_license', true),
+    -- STEP3 資金準備（実体：funding_applications）
+    (p_member_id, 'funding',   '資金準備',            '資金準備（自己資金／資金調達）',        60, 'auto',   'funding',         false),
+    -- STEP4 規約・トレーニング（実体：agreements / manual_sections）
+    (p_member_id, 'training',  '規約・実践マニュアル', '利用規約への同意',                    70, 'auto',   'terms',           false),
+    (p_member_id, 'training',  '規約・実践マニュアル', '実践マニュアルの修了',                80, 'auto',   'manual',          false),
+    -- STEP5 運用開始準備
+    (p_member_id, 'launch',    '運用開始準備',        '初回オーダーの作成',                  90, 'auto',   null,              false),
+    (p_member_id, 'launch',    '運用開始準備',        '全項目完了の確認',                   100, 'manual', null,              false);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 3) 実体 → タスク状態の同期関数
+--    各 link_key について、実体が満たされていれば done、そうでなければ todo に戻す。
+--    link_key の無いタスク（従来の手動/自動）は触らない。
+--    ボタンで勝手に done にできないよう、link_key タスクは常に実体に従う。
+-- ---------------------------------------------------------------------
+create or replace function portal.sync_onboarding_status(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_identity_ok  boolean;
+  v_antique_ok   boolean;
+  v_funding_ok   boolean;
+  v_terms_ok     boolean;
+  v_manual_ok    boolean;
+begin
+  -- 本人確認：kind=identity が approved で1件以上
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'identity' and status = 'approved'
+  ) into v_identity_ok;
+
+  -- 古物商：kind=antique_license が approved（optional）
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'antique_license' and status = 'approved'
+  ) into v_antique_ok;
+
+  -- 資金：funding_applications が completed
+  select exists (
+    select 1 from portal.funding_applications
+     where member_id = p_member_id and status = 'completed'
+  ) into v_funding_ok;
+
+  -- 規約：有効（published）な規約に同意済み
+  select exists (
+    select 1
+      from portal.agreements a
+      join portal.agreement_consents c on c.agreement_id = a.id
+     where a.published = true and c.member_id = p_member_id
+  ) into v_terms_ok;
+
+  -- マニュアル：公開セクションが1件以上あり、未チェックが無い
+  select (
+    (select count(*) from portal.manual_sections where published = true) > 0
+    and not exists (
+      select 1 from portal.manual_sections s
+       where s.published = true
+         and not exists (
+           select 1 from portal.manual_progress p
+            where p.section_id = s.id and p.member_id = p_member_id
+         )
+    )
+  ) into v_manual_ok;
+
+  -- 反映（done/todo を実体に合わせる。手動 in_progress は保持しない＝実体が唯一の真実）
+  update portal.onboarding_tasks t
+     set status = case when v_ok then 'done' else 'todo' end,
+         completed_at = case when v_ok then coalesce(t.completed_at, now()) else null end
+    from (values
+      ('identity',        v_identity_ok),
+      ('antique_license', v_antique_ok),
+      ('funding',         v_funding_ok),
+      ('terms',           v_terms_ok),
+      ('manual',          v_manual_ok)
+    ) as m(k, v_ok)
+   where t.member_id = p_member_id
+     and t.link_key = m.k
+     and t.status <> (case when v_ok then 'done' else 'todo' end);
+end;
+$$;
+
+-- public ラッパー（RPC 用）
+create or replace function public.portal_sync_onboarding_status(p_member_id uuid)
+returns void language sql security definer set search_path = public, portal as $$
+  select portal.sync_onboarding_status(p_member_id);
+$$;
+
+-- ---------------------------------------------------------------------
+-- 4) ゲート判定から optional タスクを除外（古物商が未提出でも前に進める）
+--    complete_own_task の「前ステップ未完了」判定で optional を無視する。
+-- ---------------------------------------------------------------------
+create or replace function portal.complete_own_task(p_user_id uuid, p_task_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_member uuid;
+  v_task   record;
+  v_prev_incomplete int;
+begin
+  select id into v_member from portal.members where user_id = p_user_id;
+  if v_member is null then raise exception 'member not found'; end if;
+
+  select * into v_task from portal.onboarding_tasks
+   where id = p_task_id and member_id = v_member;
+  if v_task is null then raise exception 'task not found'; end if;
+  if v_task.completion_type <> 'auto' then raise exception 'このタスクは本部の確認が必要です'; end if;
+  -- link_key 付きは実体でしか完了できない（ボタンでの直接完了を禁止）
+  if v_task.link_key is not null then
+    raise exception 'このタスクは対応する手続きの完了で自動的に達成されます';
+  end if;
+  if v_task.status = 'done' then return; end if;
+
+  -- ゲート判定: このタスクより前で「optional でない」未完了があれば拒否（飛ばせない）
+  select count(*) into v_prev_incomplete
+    from portal.onboarding_tasks
+   where member_id = v_member and sort_order < v_task.sort_order
+     and optional = false and status <> 'done';
+  if v_prev_incomplete > 0 then
+    raise exception '前のステップが未完了です。順番に進めてください。';
+  end if;
+
+  update portal.onboarding_tasks
+     set status = 'done', completed_at = now()
+   where id = p_task_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 5) 既存メンバーのタスクへ link_key / optional / step_label を後付け
+--    （前バージョンの seed で生成済みのタスクを新方式に合わせる）
+-- ---------------------------------------------------------------------
+update portal.onboarding_tasks set link_key = 'identity'
+ where link_key is null and title in ('本人確認書類の提出','本人確認書類の提出・承認');
+update portal.onboarding_tasks set link_key = 'antique_license', optional = true
+ where link_key is null and title in ('古物商許可証の提出','古物商許可証の提出（6ヶ月以内）');
+update portal.onboarding_tasks set link_key = 'terms'
+ where link_key is null and title = '利用規約への同意';
+
+grant execute on function public.portal_sync_onboarding_status(uuid) to authenticated, service_role;
+
+
+-- #####################################################################
+-- ## 016_consent_log.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — フェーズ⑥-3: 規約バージョン再同意 + 同意ログ証拠保全
+-- =====================================================================
+-- クライアント確定（2026-07-10, docs/onboarding-redesign.md §7-8）:
+--   ③ 規約更新時は既存加盟店にも再同意を求める（A）。
+--      同意履歴を証拠保全目的で記録として残す。
+--
+-- 仕組み:
+--   - 公開規約は「1バージョン=1行(agreement_id)」。新バージョンは新規行として発行。
+--     既存加盟店は新 agreement_id への同意が無い＝再同意ゲートに掛かる（アプリ側で判定済み）。
+--   - agreement_consents に同意時点のスナップショット（version/title/本文ハッシュ相当）を保存し、
+--     後から規約行が編集・削除されても「いつ・誰が・どのバージョンに同意したか」を保全する。
+-- 冪等化のため if not exists を使用。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) 同意ログのスナップショット列（証拠保全）
+-- ---------------------------------------------------------------------
+alter table portal.agreement_consents
+  add column if not exists agreement_version int;      -- 同意時点のバージョン
+alter table portal.agreement_consents
+  add column if not exists agreement_title text;       -- 同意時点のタイトル
+alter table portal.agreement_consents
+  add column if not exists user_id uuid;               -- 同意した auth ユーザー（監査用）
+
+-- 既存レコードにスナップショットを後埋め（agreement からコピー）
+update portal.agreement_consents c
+   set agreement_version = a.version,
+       agreement_title   = a.title
+  from portal.agreements a
+ where c.agreement_id = a.id
+   and c.agreement_version is null;
+
+-- ---------------------------------------------------------------------
+-- 2) 同意時に version/title を自動スナップショットするトリガ
+--    アプリ側で未設定でも、DBが agreement から確実に埋める。
+-- ---------------------------------------------------------------------
+create or replace function portal.fill_consent_snapshot()
+returns trigger language plpgsql security definer set search_path = portal as $$
+begin
+  if new.agreement_version is null or new.agreement_title is null then
+    select a.version, a.title
+      into new.agreement_version, new.agreement_title
+      from portal.agreements a
+     where a.id = new.agreement_id;
+  end if;
+  if new.user_id is null then
+    new.user_id := auth.uid();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_consent_snapshot on portal.agreement_consents;
+create trigger trg_consent_snapshot
+  before insert on portal.agreement_consents
+  for each row execute function portal.fill_consent_snapshot();
+
+-- ---------------------------------------------------------------------
+-- 3) 同意ログの改ざん防止：更新・削除を禁止（証拠保全）
+--    member は元々 update/delete 権限なし。念のため cascade 以外で消えないよう
+--    agreement 削除時も同意ログは残す（agreement_id を null 許容化して保全）。
+-- ---------------------------------------------------------------------
+-- agreement 削除時に同意ログまで消えると証拠保全にならないため、FK を restrict 寄りに。
+-- （既存の on delete cascade を外し、set null にして履歴を残す）
+alter table portal.agreement_consents
+  drop constraint if exists agreement_consents_agreement_id_fkey;
+alter table portal.agreement_consents
+  alter column agreement_id drop not null;
+alter table portal.agreement_consents
+  add constraint agreement_consents_agreement_id_fkey
+  foreign key (agreement_id) references portal.agreements(id) on delete set null;
+
+-- ---------------------------------------------------------------------
+-- 4) 公開規約の一意化補助：published は常に最大1件（アプリ側でも制御済み）
+--    証跡確認用のインデックス。
+-- ---------------------------------------------------------------------
+create index if not exists idx_consents_member_agreement
+  on portal.agreement_consents(member_id, agreement_id);
+
+grant select, insert on portal.agreement_consents to authenticated;
+grant all on portal.agreement_consents to service_role;
+
+
+-- #####################################################################
+-- ## 017_support_items.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — フェーズ⑦-2: 本部サポート項目の CMS 化
+-- =====================================================================
+-- 背景（フェーズ⑥-4 / docs/onboarding-redesign.md §8 ④）:
+--   本部サポートは今後項目が増える想定。本部が自分で項目を追加・編集・
+--   並べ替え・公開できるように DB 化する（実践マニュアル CMS と同じ方式）。
+--
+--   重要（非弁類似リスク回避）: サポートは「代行」ではなく
+--   「（有資格）業者の紹介・取次」名目。UI 文言から「代行」を排除する。
+--   本テーブルは案内文を保持するのみで、法的な代行行為は行わない。
+--
+-- support_items : 本部が管理するサポートメニュー項目
+-- 冪等化のため if exists / on conflict を併用。
+-- =====================================================================
+
+create table if not exists portal.support_items (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,          -- サポート項目名（例：古物商取得サポート（業者の紹介））
+  body        text,                    -- 加盟店向けの案内文（紹介の内容）
+  note        text,                    -- 本部メモ（加盟店には非表示）
+  sort_order  int not null default 0,
+  published   boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_support_items_order on portal.support_items(sort_order);
+
+drop trigger if exists trg_support_items_touch on portal.support_items;
+create trigger trg_support_items_touch
+  before update on portal.support_items
+  for each row execute function portal.touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- RLS
+-- ---------------------------------------------------------------------
+alter table portal.support_items enable row level security;
+
+-- 項目: 閲覧はログインユーザー全員（公開分・加盟店にも案内可）／編集は本部
+drop policy if exists portal_support_items_read on portal.support_items;
+create policy portal_support_items_read on portal.support_items
+  for select using (auth.uid() is not null);
+drop policy if exists portal_support_items_write on portal.support_items;
+create policy portal_support_items_write on portal.support_items
+  for all using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+grant select, insert, update, delete on portal.support_items to authenticated;
+grant all on portal.support_items to service_role;
+
+-- ---------------------------------------------------------------------
+-- 既定のサポート項目（初回のみ・空なら投入）
+-- 「代行」ではなく「紹介」名目。実際の申請は本人または紹介先の有資格者が行う。
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from portal.support_items) then
+    insert into portal.support_items (title, body, sort_order) values
+      (
+        '古物商取得サポート（業者の紹介）',
+        E'古物商許可の取得を希望される加盟店へ、行政書士・取得サポート業者をご紹介します。\n手続きの申請自体は加盟店ご本人、または紹介先の有資格者が行います。\n本部は申請の代行は行わず、有資格者の紹介・取次のみを行います。',
+        10
+      );
+  end if;
+end $$;
+
+
+-- #####################################################################
+-- ## 018_plan_models.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — レビュー⑳基盤: プランの保有モデル + 加盟店の実行フロー
+-- =====================================================================
+-- クライアント確定（2026-07-11, docs/review-16-20-plan.md）:
+--   - プランに「保有モデル」を持たせる：has_semi（半自動可）/ has_auto（自動可）。
+--     フルオート = has_semi かつ has_auto（両方保有）／セミオート = has_semi のみ。
+--   - 加盟店が「今実行しているフロー」を members.active_flow に持つ（'semi' | 'auto'）。
+--     auto のみ保有→'auto' 固定、semi のみ→'semi' 固定、両方保有→既定 'auto' で手動 'semi' 切替可。
+--
+-- 本 migration はカラム追加と既存データのバックフィルのみ。フロー分岐の実装は次フェーズ。
+-- 冪等化のため if not exists / on conflict を使用。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) plans: 保有モデルフラグ
+-- ---------------------------------------------------------------------
+alter table portal.plans add column if not exists has_semi boolean not null default true;   -- 半自動売買が可能か
+alter table portal.plans add column if not exists has_auto boolean not null default false;  -- 自動売買が可能か
+
+-- 既存プランを plan_type からバックフィル
+--   semi_auto → 半自動のみ（has_semi=true, has_auto=false）
+--   full_auto → 両方保有（has_semi=true, has_auto=true）
+update portal.plans set has_semi = true,  has_auto = false where plan_type = 'semi_auto';
+update portal.plans set has_semi = true,  has_auto = true  where plan_type = 'full_auto';
+
+-- ---------------------------------------------------------------------
+-- 2) members: 実行中フロー
+--    null = 未設定（プランの保有モデルから既定を導出する。実装は次フェーズ）。
+-- ---------------------------------------------------------------------
+alter table portal.members
+  add column if not exists active_flow text check (active_flow in ('semi', 'auto'));
+
+comment on column portal.plans.has_semi is '半自動売買モデルを保有するプランか';
+comment on column portal.plans.has_auto is '自動売買モデルを保有するプランか';
+comment on column portal.members.active_flow is '加盟店が現在実行しているフロー（semi/auto）。null=プランから既定導出';
+
+
+-- #####################################################################
+-- ## 019_flow_branching.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — レビュー⑰⑳: フロー二系統化（Phase 3-a）
+-- =====================================================================
+-- クライアント確定（2026-07-11）:
+--   - 自動売買 / 半自動売買 でマニュアル（フロー）が別スキーム。
+--   - 資金調達分岐（自己資金/資金調達）は両フロー共通。
+--   - 自動売買フローの中身は後でクライアント提供 → 器を先に作り CMS で埋める（空プレースホルダで開始）。
+--   - フルオート = has_semi かつ has_auto／セミオート = has_semi のみ。
+--     実効フロー：両方保有→既定 auto、semi のみ→semi、未割当→semi（安全側）。
+--
+-- 本 migration（3-a）:
+--   1) manual_sections に flow 列（'semi' | 'auto' | 'both'）。既存8項目は半自動用→'semi'。
+--   2) seed_onboarding_tasks を実効フローで分岐（共通＋フロー別マニュアル＋auto空プレースホルダ）。
+--   3) sync_onboarding_status のマニュアル判定を「その加盟店の実効フローに該当する公開セクション」に限定。
+-- 冪等化のため if exists / or replace を併用。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) manual_sections.flow
+-- ---------------------------------------------------------------------
+alter table portal.manual_sections
+  add column if not exists flow text not null default 'semi'
+  check (flow in ('semi', 'auto', 'both'));
+
+-- 既存の実践マニュアル項目は「半自動用」なので semi（default で既に semi だが明示）。
+update portal.manual_sections set flow = 'semi' where flow is null;
+
+comment on column portal.manual_sections.flow is 'このマニュアル項目が属するフロー種別（semi/auto/both）';
+
+-- ---------------------------------------------------------------------
+-- ヘルパー：加盟店の実効フローを返す（プランの保有モデル＋active_flow から導出）
+--   両方保有→ active_flow を尊重（既定 auto）／semi のみ→semi／auto のみ→auto／未割当→semi
+-- ---------------------------------------------------------------------
+create or replace function portal.effective_flow(p_member_id uuid)
+returns text language plpgsql stable security definer set search_path = portal as $$
+declare
+  v_active   text;
+  v_has_semi boolean;
+  v_has_auto boolean;
+begin
+  select m.active_flow, coalesce(pl.has_semi, false), coalesce(pl.has_auto, false)
+    into v_active, v_has_semi, v_has_auto
+    from portal.members m
+    left join portal.plans pl on pl.id = m.plan_id
+   where m.id = p_member_id;
+
+  -- 明示設定が保有モデルと整合していれば尊重
+  if v_active = 'auto' and v_has_auto then return 'auto'; end if;
+  if v_active = 'semi' and v_has_semi then return 'semi'; end if;
+  -- 既定導出
+  if v_has_auto then return 'auto'; end if;
+  if v_has_semi then return 'semi'; end if;
+  return 'semi';
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 2) seed_onboarding_tasks：実効フローで分岐生成
+--    共通（契約/本人確認/資金/規約）＋ フロー別マニュアル ＋ auto は空プレースホルダ追加。
+-- ---------------------------------------------------------------------
+create or replace function portal.seed_onboarding_tasks(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_flow text;
+begin
+  if exists (select 1 from portal.onboarding_tasks where member_id = p_member_id) then
+    return;
+  end if;
+
+  v_flow := portal.effective_flow(p_member_id);
+
+  -- 共通ステップ（両フロー）
+  insert into portal.onboarding_tasks
+    (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+    (p_member_id, 'contract',  '契約・初期設定',      '加盟契約の締結',                      10, 'manual', null,              false),
+    (p_member_id, 'contract',  '契約・初期設定',      'アカウント発行・初回ログイン',        20, 'auto',   null,              false),
+    (p_member_id, 'contract',  '契約・初期設定',      'プロフィール（連絡先・陸送先）の登録',  30, 'auto',   null,              false),
+    (p_member_id, 'documents', '本人確認・必要書類',  '本人確認書類の提出・承認',            40, 'manual', 'identity',        false),
+    (p_member_id, 'documents', '本人確認・必要書類',  '古物商許可証の提出（6ヶ月以内）',      50, 'manual', 'antique_license', true),
+    (p_member_id, 'funding',   '資金準備',            '資金準備（自己資金／資金調達）',        60, 'auto',   'funding',         false),
+    (p_member_id, 'training',  '規約・実践マニュアル', '利用規約への同意',                    70, 'auto',   'terms',           false);
+
+  -- フロー別の実践マニュアル修了（link_key='manual' は sync がフローに応じて判定）
+  if v_flow = 'auto' then
+    insert into portal.onboarding_tasks
+      (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+      (p_member_id, 'training', '規約・実践マニュアル', '実践マニュアル（自動売買）の修了', 80, 'auto', 'manual', false);
+  else
+    insert into portal.onboarding_tasks
+      (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+      (p_member_id, 'training', '規約・実践マニュアル', '実践マニュアル（半自動売買）の修了', 80, 'auto', 'manual', false);
+  end if;
+
+  -- 運用開始準備（共通）
+  insert into portal.onboarding_tasks
+    (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+    (p_member_id, 'launch', '運用開始準備', '初回オーダーの作成',   90, 'auto',   null, false),
+    (p_member_id, 'launch', '運用開始準備', '全項目完了の確認',    100, 'manual', null, false);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 3) sync_onboarding_status：マニュアル判定を実効フローに限定
+--    semi の加盟店 → flow in ('semi','both') の公開セクションで全チェック判定。
+--    auto の加盟店 → flow in ('auto','both')。該当セクションが0件なら未修了扱い（false）。
+-- ---------------------------------------------------------------------
+create or replace function portal.sync_onboarding_status(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_identity_ok  boolean;
+  v_antique_ok   boolean;
+  v_funding_ok   boolean;
+  v_terms_ok     boolean;
+  v_manual_ok    boolean;
+  v_flow         text;
+  v_flows        text[];
+begin
+  v_flow := portal.effective_flow(p_member_id);
+  v_flows := case when v_flow = 'auto' then array['auto','both'] else array['semi','both'] end;
+
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'identity' and status = 'approved'
+  ) into v_identity_ok;
+
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'antique_license' and status = 'approved'
+  ) into v_antique_ok;
+
+  select exists (
+    select 1 from portal.funding_applications
+     where member_id = p_member_id and status = 'completed'
+  ) into v_funding_ok;
+
+  select exists (
+    select 1
+      from portal.agreements a
+      join portal.agreement_consents c on c.agreement_id = a.id
+     where a.published = true and c.member_id = p_member_id
+  ) into v_terms_ok;
+
+  -- マニュアル：実効フローに該当する公開セクションが1件以上あり、未チェックが無い
+  select (
+    (select count(*) from portal.manual_sections where published = true and flow = any(v_flows)) > 0
+    and not exists (
+      select 1 from portal.manual_sections s
+       where s.published = true and s.flow = any(v_flows)
+         and not exists (
+           select 1 from portal.manual_progress p
+            where p.section_id = s.id and p.member_id = p_member_id
+         )
+    )
+  ) into v_manual_ok;
+
+  update portal.onboarding_tasks t
+     set status = case when v_ok then 'done' else 'todo' end,
+         completed_at = case when v_ok then coalesce(t.completed_at, now()) else null end
+    from (values
+      ('identity',        v_identity_ok),
+      ('antique_license', v_antique_ok),
+      ('funding',         v_funding_ok),
+      ('terms',           v_terms_ok),
+      ('manual',          v_manual_ok)
+    ) as m(k, v_ok)
+   where t.member_id = p_member_id
+     and t.link_key = m.k
+     and t.status <> (case when v_ok then 'done' else 'todo' end);
+end;
+$$;
+
+
+-- #####################################################################
+-- ## 020_full_automation.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — レビュー⑯: 完全自動化（Phase 4）
+-- =====================================================================
+-- クライアント確定（2026-07-11）:
+--   加盟店ごとに本部が手動でタスクを進める構造は運用が破綻する。すべて自動で流す。
+--   本部の手動は「本人確認の承認」のみ。
+--     - 加盟契約の締結   → members.contract_date が入っていれば自動 done（link_key='contract'）
+--     - 全項目完了の確認 → 他の必須(optional以外)タスクが全 done なら自動 done（link_key='completion'）
+--
+-- 本 migration:
+--   1) seed：契約締結・全項目確認を link_key 化（completion_type=auto）。
+--   2) sync：contract / completion の自動判定を追加。completion は他必須が全 done かで決まるため
+--      主判定の後に再計算する（2段更新）。
+--   3) 既存タスクへ link_key を後付け（backfill）。
+-- 冪等化のため or replace / if を併用。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) seed_onboarding_tasks：契約締結・全項目確認を自動判定型に
+--    （フロー分岐は 019 を踏襲）
+-- ---------------------------------------------------------------------
+create or replace function portal.seed_onboarding_tasks(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_flow text;
+begin
+  if exists (select 1 from portal.onboarding_tasks where member_id = p_member_id) then
+    return;
+  end if;
+
+  v_flow := portal.effective_flow(p_member_id);
+
+  -- 共通ステップ（両フロー）。加盟契約の締結は link_key='contract'（contract_date で自動 done）。
+  insert into portal.onboarding_tasks
+    (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+    (p_member_id, 'contract',  '契約・初期設定',      '加盟契約の締結',                      10, 'auto',   'contract',        false),
+    (p_member_id, 'contract',  '契約・初期設定',      'アカウント発行・初回ログイン',        20, 'auto',   null,              false),
+    (p_member_id, 'contract',  '契約・初期設定',      'プロフィール（連絡先・陸送先）の登録',  30, 'auto',   null,              false),
+    (p_member_id, 'documents', '本人確認・必要書類',  '本人確認書類の提出・承認',            40, 'manual', 'identity',        false),
+    (p_member_id, 'documents', '本人確認・必要書類',  '古物商許可証の提出（6ヶ月以内）',      50, 'manual', 'antique_license', true),
+    (p_member_id, 'funding',   '資金準備',            '資金準備（自己資金／資金調達）',        60, 'auto',   'funding',         false),
+    (p_member_id, 'training',  '規約・実践マニュアル', '利用規約への同意',                    70, 'auto',   'terms',           false);
+
+  if v_flow = 'auto' then
+    insert into portal.onboarding_tasks
+      (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+      (p_member_id, 'training', '規約・実践マニュアル', '実践マニュアル（自動売買）の修了', 80, 'auto', 'manual', false);
+  else
+    insert into portal.onboarding_tasks
+      (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+      (p_member_id, 'training', '規約・実践マニュアル', '実践マニュアル（半自動売買）の修了', 80, 'auto', 'manual', false);
+  end if;
+
+  -- 運用開始準備。全項目完了の確認は link_key='completion'（他必須が全 done で自動）。
+  insert into portal.onboarding_tasks
+    (member_id, step_key, step_label, title, sort_order, completion_type, link_key, optional) values
+    (p_member_id, 'launch', '運用開始準備', '初回オーダーの作成', 90,  'auto', null,          false),
+    (p_member_id, 'launch', '運用開始準備', '全項目完了の確認',  100,  'auto', 'completion',  false);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 2) sync_onboarding_status：contract / completion の自動判定を追加
+-- ---------------------------------------------------------------------
+create or replace function portal.sync_onboarding_status(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_identity_ok  boolean;
+  v_antique_ok   boolean;
+  v_funding_ok   boolean;
+  v_terms_ok     boolean;
+  v_manual_ok    boolean;
+  v_contract_ok  boolean;
+  v_completion_ok boolean;
+  v_flow         text;
+  v_flows        text[];
+begin
+  v_flow := portal.effective_flow(p_member_id);
+  v_flows := case when v_flow = 'auto' then array['auto','both'] else array['semi','both'] end;
+
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'identity' and status = 'approved'
+  ) into v_identity_ok;
+
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'antique_license' and status = 'approved'
+  ) into v_antique_ok;
+
+  select exists (
+    select 1 from portal.funding_applications
+     where member_id = p_member_id and status = 'completed'
+  ) into v_funding_ok;
+
+  select exists (
+    select 1
+      from portal.agreements a
+      join portal.agreement_consents c on c.agreement_id = a.id
+     where a.published = true and c.member_id = p_member_id
+  ) into v_terms_ok;
+
+  select (
+    (select count(*) from portal.manual_sections where published = true and flow = any(v_flows)) > 0
+    and not exists (
+      select 1 from portal.manual_sections s
+       where s.published = true and s.flow = any(v_flows)
+         and not exists (
+           select 1 from portal.manual_progress p
+            where p.section_id = s.id and p.member_id = p_member_id
+         )
+    )
+  ) into v_manual_ok;
+
+  -- 契約締結：契約日が入っていれば自動 done
+  select exists (
+    select 1 from portal.members where id = p_member_id and contract_date is not null
+  ) into v_contract_ok;
+
+  -- 第1段：link_key タスク（completion 以外）を実体に合わせる
+  update portal.onboarding_tasks t
+     set status = case when v_ok then 'done' else 'todo' end,
+         completed_at = case when v_ok then coalesce(t.completed_at, now()) else null end
+    from (values
+      ('identity',        v_identity_ok),
+      ('antique_license', v_antique_ok),
+      ('funding',         v_funding_ok),
+      ('terms',           v_terms_ok),
+      ('manual',          v_manual_ok),
+      ('contract',        v_contract_ok)
+    ) as m(k, v_ok)
+   where t.member_id = p_member_id
+     and t.link_key = m.k
+     and t.status <> (case when v_ok then 'done' else 'todo' end);
+
+  -- 全項目完了の確認：completion 以外の「必須(optional以外)」タスクが全 done か
+  select not exists (
+    select 1 from portal.onboarding_tasks
+     where member_id = p_member_id
+       and optional = false
+       and coalesce(link_key, '') <> 'completion'
+       and status <> 'done'
+  ) into v_completion_ok;
+
+  -- 第2段：completion を反映
+  update portal.onboarding_tasks t
+     set status = case when v_completion_ok then 'done' else 'todo' end,
+         completed_at = case when v_completion_ok then coalesce(t.completed_at, now()) else null end
+   where t.member_id = p_member_id
+     and t.link_key = 'completion'
+     and t.status <> (case when v_completion_ok then 'done' else 'todo' end);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 3) 既存タスクへ link_key 後付け（前バージョンで生成済みのもの）
+--    加盟契約の締結 → contract（completion_type も auto に）
+--    全項目完了の確認 → completion（同上）
+-- ---------------------------------------------------------------------
+update portal.onboarding_tasks
+   set link_key = 'contract', completion_type = 'auto'
+ where link_key is null and title = '加盟契約の締結';
+
+update portal.onboarding_tasks
+   set link_key = 'completion', completion_type = 'auto'
+ where link_key is null and title = '全項目完了の確認';
+
+
+-- #####################################################################
 -- ## 仕上げ: PostgREST スキーマキャッシュを再読込
 -- #####################################################################
 notify pgrst, 'reload schema';

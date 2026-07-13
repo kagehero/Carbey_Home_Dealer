@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
-import { getCustomer, listPurchases, listDeals } from '@/lib/portal/crm'
+import { getCustomer, listPurchases, listDeals, listMemberOptions } from '@/lib/portal/crm'
 import { DEAL_STATUS_LABEL, DEAL_STATUS_STYLE, DEAL_STATUS_ORDER, yen } from '@/lib/portal/labels'
 import type { DealStatus } from '@/types/database'
 import {
@@ -20,10 +20,11 @@ const small = 'rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:bo
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireFeature('crm')
   const { id } = await params
-  const [customer, purchases, deals] = await Promise.all([
+  const [customer, purchases, deals, memberOptions] = await Promise.all([
     getCustomer(id),
     listPurchases(id),
     listDeals(id),
+    listMemberOptions(),
   ])
   if (!customer) notFound()
 
@@ -56,6 +57,15 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           <div>
             <label className="mb-1 block text-xs text-slate-500">住所</label>
             <input name="address" defaultValue={customer.address ?? ''} className={field} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">担当加盟店</label>
+            <select name="member_id" defaultValue={customer.member_id ?? ''} className={field}>
+              <option value="">（未割当）</option>
+              {memberOptions.map((m) => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
           </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs text-slate-500">メモ</label>

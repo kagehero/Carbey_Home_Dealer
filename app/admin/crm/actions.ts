@@ -32,6 +32,7 @@ export async function createCustomerAction(formData: FormData) {
     email: str(formData.get('email')),
     address: str(formData.get('address')),
     note: str(formData.get('note')),
+    member_id: str(formData.get('member_id')),
   })
   revalidatePath('/admin/crm')
   redirect(`/admin/crm/${c.id}`)
@@ -47,6 +48,7 @@ export async function updateCustomerAction(formData: FormData) {
     email: str(formData.get('email')),
     address: str(formData.get('address')),
     note: str(formData.get('note')),
+    member_id: str(formData.get('member_id')),
   })
   revalidatePath(`/admin/crm/${id}`)
   redirect(`/admin/crm/${id}`)

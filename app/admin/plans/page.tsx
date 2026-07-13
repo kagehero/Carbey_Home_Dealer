@@ -1,7 +1,7 @@
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Users, ChevronRight } from 'lucide-react'
 import { requireAdmin } from '@/lib/auth/session'
-import { listPlans } from '@/lib/portal/plans'
+import { listPlans, getPlanMemberCounts } from '@/lib/portal/plans'
 import { yen } from '@/lib/portal/labels'
 import { updatePlanAction } from './actions'
 
@@ -12,7 +12,7 @@ const field = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm foc
 export default async function PlansPage() {
   // プラン管理は super_admin のみ (permission matrix)
   await requireAdmin()
-  const plans = await listPlans()
+  const [plans, memberCounts] = await Promise.all([listPlans(), getPlanMemberCounts()])
 
   return (
     <div>
@@ -42,6 +42,10 @@ export default async function PlansPage() {
               <div className="flex items-center gap-2">
                 <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">{p.code}</span>
                 <span className="text-xs text-slate-400">{p.plan_type === 'semi_auto' ? '半自動' : '全自動'}</span>
+                {/* このプランの加盟店数 → 会員一覧（plan_id 絞り込み）へ */}
+                <Link href={`/admin/members?plan_id=${p.id}`} className="flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100">
+                  <Users className="h-3 w-3" /> 加盟店 {memberCounts[p.id] ?? 0} 件 <ChevronRight className="h-3 w-3" />
+                </Link>
               </div>
               <label className="flex items-center gap-1.5 text-xs text-slate-600">
                 <input type="checkbox" name="is_active" defaultChecked={p.is_active} />
@@ -66,6 +70,21 @@ export default async function PlansPage() {
                 <input name="display_order" type="number" defaultValue={p.display_order} className={field} />
               </div>
               <input type="hidden" name="plan_type" value={p.plan_type} />
+              {/* 保有モデル（レビュー⑳）：フルオート=両方 / セミオート=半自動のみ */}
+              <div className="sm:col-span-4">
+                <label className="mb-1 block text-xs text-slate-500">保有モデル（フロー種別）</label>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                    <input type="checkbox" name="has_semi" defaultChecked={p.has_semi} className="h-4 w-4 rounded border-slate-300 text-brand-500" />
+                    半自動売買（semi）
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                    <input type="checkbox" name="has_auto" defaultChecked={p.has_auto} className="h-4 w-4 rounded border-slate-300 text-brand-500" />
+                    自動売買（auto）
+                  </label>
+                  <span className="text-xs text-slate-400">※両方チェックすると加盟店がフローを切替可能</span>
+                </div>
+              </div>
               <div className="sm:col-span-3">
                 <label className="mb-1 block text-xs text-slate-500">説明</label>
                 <input name="description" defaultValue={p.description ?? ''} className={field} />

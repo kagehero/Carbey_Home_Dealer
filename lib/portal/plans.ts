@@ -37,3 +37,15 @@ export async function updatePlan(id: string, patch: Partial<PlanInsert>): Promis
   const { error } = await supabase.from('plans').update(patch as never).eq('id', id)
   if (error) throw new Error(error.message)
 }
+
+/** プランごとの加盟店数（プラン管理⇔加盟店管理の連動表示用）。plan_id → 件数。 */
+export async function getPlanMemberCounts(): Promise<Record<string, number>> {
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase.from('members').select('plan_id')
+  if (error) throw new Error(error.message)
+  const counts: Record<string, number> = {}
+  for (const r of (data ?? []) as { plan_id: string | null }[]) {
+    if (r.plan_id) counts[r.plan_id] = (counts[r.plan_id] ?? 0) + 1
+  }
+  return counts
+}

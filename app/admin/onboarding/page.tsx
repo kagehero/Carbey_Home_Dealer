@@ -1,26 +1,40 @@
 import Link from 'next/link'
-import { ArrowRight, ClipboardList } from 'lucide-react'
+import { ArrowRight, ClipboardList, MessageSquare, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { listMembers } from '@/lib/portal/members'
 import { MEMBER_STATUS_LABEL } from '@/lib/portal/labels'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import type { MemberStatus } from '@/types/database'
+import { sendReminderAction } from './actions'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminOnboardingPage() {
+// 進捗停滞の判定：稼働中(active)・進捗100%未満・登録から7日以上経過
+const STALL_DAYS = 7
+function isStalled(m: { status: string; pct: number; registration_date: string }): boolean {
+  if (m.status !== 'active' || m.pct >= 100) return false
+  const days = (Date.now() - new Date(m.registration_date).getTime()) / 86_400_000
+  return days >= STALL_DAYS
+}
+
+export default async function AdminOnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reminded?: string }>
+}) {
   await requireFeature('members')
-  const members = await listMembers()
+  const [members, sp] = await Promise.all([listMembers(), searchParams])
 
   const withProgress = members.map((m) => {
     const total = m.onboarding_total || 1
     const pct = Math.round((m.onboarding_done / total) * 100)
-    return { ...m, pct }
-  })
+    return { ...m, pct, stalled: false as boolean }
+  }).map((m) => ({ ...m, stalled: isStalled(m) }))
 
   const inProgress = withProgress.filter((m) => m.pct < 100).length
   const completed = withProgress.filter((m) => m.pct >= 100).length
+  const stalledCount = withProgress.filter((m) => m.stalled).length
 
   return (
     <div className="space-y-6">
@@ -29,10 +43,17 @@ export default async function AdminOnboardingPage() {
         <p className="text-sm text-slate-500">加盟店ごとのスタートアップ進捗を確認・更新します。</p>
       </div>
 
+      {sp.reminded && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
+          <CheckCircle2 className="h-4 w-4" /> チャットでリマインドを送信しました。
+        </div>
+      )}
+
       {/* サマリ */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Summary label="加盟店数" value={members.length} />
         <Summary label="進行中" value={inProgress} tone="text-brand-600" />
+        <Summary label="停滞" value={stalledCount} tone="text-amber-600" />
         <Summary label="完了" value={completed} tone="text-emerald-600" />
       </div>
 
@@ -69,12 +90,28 @@ export default async function AdminOnboardingPage() {
                         <div className={`h-full rounded-full ${m.pct >= 100 ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{ width: `${m.pct}%` }} />
                       </div>
                       <span className="text-xs font-medium text-slate-600">{m.onboarding_done}/{m.onboarding_total}（{m.pct}%）</span>
+                      {m.stalled && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          <AlertTriangle className="h-3 w-3" /> 停滞
+                        </span>
+                      )}
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-right">
-                    <Link href={`/admin/onboarding/${m.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-info-600 hover:underline">
-                      管理 <ArrowRight className="h-3 w-3" />
-                    </Link>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center justify-end gap-3">
+                      {/* 停滞している加盟店へチャットでリマインド（㉒） */}
+                      {m.stalled && (
+                        <form action={sendReminderAction}>
+                          <input type="hidden" name="member_id" value={m.id} />
+                          <button className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
+                            <MessageSquare className="h-3 w-3" /> リマインド
+                          </button>
+                        </form>
+                      )}
+                      <Link href={`/admin/onboarding/${m.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-info-600 hover:underline">
+                        管理 <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

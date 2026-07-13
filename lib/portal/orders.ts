@@ -1,21 +1,39 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
+import { assertTradingAllowed } from '@/lib/portal/trading'
 import type { OrderRow, OrderStatus } from '@/types/database'
 
 export type OrderWithMember = OrderRow & {
   member: { id: string; member_name: string; company_name: string | null } | null
 }
 
-/** 全オーダー（本部）。加盟店名を結合。 */
-export async function listOrders(status?: OrderStatus): Promise<OrderWithMember[]> {
+/** 全オーダー（本部）。加盟店名を結合。status / memberId で絞り込み可。 */
+export async function listOrders(filter?: { status?: OrderStatus; memberId?: string }): Promise<OrderWithMember[]> {
   const supabase = createServiceRoleClient()
   let q = supabase
     .from('orders')
     .select('*, member:members(id, member_name, company_name)')
     .order('created_at', { ascending: false })
-  if (status) q = q.eq('status', status)
+  if (filter?.status) q = q.eq('status', filter.status)
+  if (filter?.memberId) q = q.eq('member_id', filter.memberId)
   const { data, error } = await q
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as OrderWithMember[]
+}
+
+export type OrderSummary = { total: number; received: number; in_progress: number; completed: number; cancelled: number }
+
+/** 加盟店ごとのオーダー件数サマリ（本部・会員個別画面用）。 */
+export async function getMemberOrderSummary(memberId: string): Promise<OrderSummary> {
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase
+    .from('orders')
+    .select('status')
+    .eq('member_id', memberId)
+  if (error) throw new Error(error.message)
+  const rows = (data ?? []) as { status: OrderStatus }[]
+  const s: OrderSummary = { total: rows.length, received: 0, in_progress: 0, completed: 0, cancelled: 0 }
+  for (const r of rows) s[r.status]++
+  return s
 }
 
 /** member.user_id から自分のオーダー一覧（加盟店）。 */
@@ -53,6 +71,9 @@ export async function createOwnOrder(
   userId: string,
   input: Pick<OrderRow, 'maker' | 'car_model' | 'year' | 'budget_yen' | 'preferred_color' | 'mileage_max' | 'notes'>,
 ): Promise<OrderRow> {
+  // 取引可否ガード：古物商猶予の超過中は発注不可（自動発注の事故防止）
+  await assertTradingAllowed(userId)
+
   const supabase = createServiceRoleClient()
   const { data: member } = await supabase
     .from('members')

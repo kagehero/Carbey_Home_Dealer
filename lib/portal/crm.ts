@@ -15,25 +15,49 @@ import type {
 
 // --- 顧客 (エンドユーザー) ---
 
-export async function listCustomers(q?: string): Promise<CrmCustomerRow[]> {
+/** 顧客に担当加盟店を結合した型（⑱ CRM連動）。 */
+export type CrmCustomerWithMember = CrmCustomerRow & {
+  member: { id: string; member_name: string; company_name: string | null } | null
+}
+
+/** 加盟店選択用の軽量オプション（CRMの担当加盟店セレクタ用）。 */
+export async function listMemberOptions(): Promise<{ id: string; label: string }[]> {
   const supabase = createServiceRoleClient()
-  let query = supabase.from('crm_customers').select('*').order('created_at', { ascending: false })
+  const { data, error } = await supabase
+    .from('members')
+    .select('id, member_name, company_name')
+    .order('member_name', { ascending: true })
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((m: { id: string; member_name: string; company_name: string | null }) => ({
+    id: m.id,
+    label: m.company_name ? `${m.company_name}（${m.member_name}）` : m.member_name,
+  }))
+}
+
+/** 顧客一覧。担当加盟店を結合。memberId で絞り込み可（⑱）。 */
+export async function listCustomers(q?: string, memberId?: string): Promise<CrmCustomerWithMember[]> {
+  const supabase = createServiceRoleClient()
+  let query = supabase
+    .from('crm_customers')
+    .select('*, member:members(id, member_name, company_name)')
+    .order('created_at', { ascending: false })
   if (q) {
     const like = `%${q}%`
     query = query.or(`name.ilike.${like},email.ilike.${like},phone.ilike.${like}`)
   }
+  if (memberId) query = query.eq('member_id', memberId)
   const { data, error } = await query
   if (error) throw new Error(error.message)
-  return (data ?? []) as CrmCustomerRow[]
+  return (data ?? []) as unknown as CrmCustomerWithMember[]
 }
 
-export async function getCustomer(id: string): Promise<CrmCustomerRow | null> {
+export async function getCustomer(id: string): Promise<CrmCustomerWithMember | null> {
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase
     .from('crm_customers')
-    .select('*')
+    .select('*, member:members(id, member_name, company_name)')
     .eq('id', id)
-    .maybeSingle<CrmCustomerRow>()
+    .maybeSingle<CrmCustomerWithMember>()
   if (error) throw new Error(error.message)
   return data
 }

@@ -48,6 +48,8 @@ export async function updatePlanAction(formData: FormData) {
   await updatePlan(id, {
     name: str(formData.get('name')) ?? undefined,
     plan_type: (str(formData.get('plan_type')) ?? undefined) as PlanType | undefined,
+    has_semi: formData.get('has_semi') === 'on',
+    has_auto: formData.get('has_auto') === 'on',
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     display_order: num(formData.get('display_order')),

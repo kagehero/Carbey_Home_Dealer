@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Circle, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Loader2, Info } from 'lucide-react'
 import { requireFeature } from '@/lib/auth/session'
 import { getMember } from '@/lib/portal/members'
-import { listOnboardingTasks, buildOnboardingView, ensureOnboardingTasks } from '@/lib/portal/onboarding'
+import { listOnboardingTasks, buildOnboardingView, ensureOnboardingTasks, syncOnboardingStatus } from '@/lib/portal/onboarding'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { setTaskStatusAction, seedTasksAction } from '../actions'
 
@@ -21,8 +21,9 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
   const member = await getMember(id)
   if (!member) notFound()
 
-  // タスクが無ければ生成（初回・保険）
+  // タスクが無ければ生成（初回・保険）→ 実体（本人確認/資金/規約/マニュアル）と同期
   await ensureOnboardingTasks(id)
+  await syncOnboardingStatus(id)
   const tasks = await listOnboardingTasks(id)
   const view = buildOnboardingView(tasks)
 
@@ -35,11 +36,23 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">{member.company_name ?? member.member_name}</h1>
-          <p className="text-sm text-slate-500">スタートアップ進捗の管理</p>
+          <p className="text-sm text-slate-500">スタートアップ進捗の監視</p>
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold text-slate-900">{view.pct}%</div>
           <div className="text-xs text-slate-500">{view.doneTasks}/{view.totalTasks} タスク完了</div>
+        </div>
+      </div>
+
+      {/* 自動化の説明バナー（完全自動化・レビュー⑯） */}
+      <div className="flex items-start gap-2 rounded-xl border border-info-200 bg-info-50 px-4 py-3 text-sm text-info-800">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-info-600" />
+        <div>
+          <p className="font-semibold">進捗はほぼ自動で進みます</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed">
+            契約日の登録・加盟店の手続き（本人確認提出／資金／規約／マニュアル）に応じてタスクは自動で完了します。
+            本部の手動操作が必要なのは<span className="font-semibold">本人確認書類の承認</span>のみです（下記「対応画面へ」から）。
+          </p>
         </div>
       </div>
 
@@ -83,26 +96,35 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
                           ? <Loader2 className="h-4 w-4 text-brand-500" />
                           : <Circle className="h-4 w-4 text-slate-300" />}
                       {t.title}
+                      {t.optional && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">任意</span>}
                     </span>
-                    {/* 状態切替 */}
-                    <div className="flex items-center gap-1">
-                      {(['todo', 'in_progress', 'done'] as const).map((s) => (
-                        <form key={s} action={setTaskStatusAction}>
-                          <input type="hidden" name="task_id" value={t.id} />
-                          <input type="hidden" name="member_id" value={id} />
-                          <input type="hidden" name="status" value={s} />
-                          <button
-                            className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
-                              t.status === s
-                                ? s === 'done' ? 'bg-emerald-500 text-white' : s === 'in_progress' ? 'bg-brand-500 text-white' : 'bg-slate-600 text-white'
-                                : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
-                            }`}
-                          >
-                            {s === 'todo' ? '未着手' : s === 'in_progress' ? '進行中' : '完了'}
-                          </button>
-                        </form>
-                      ))}
-                    </div>
+                    {t.link_key ? (
+                      // 実体で自動判定されるタスク（本人確認/資金/規約/マニュアル）。手動切替は不可。
+                      <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <Link href={`/admin/members/${id}`} className="text-brand-600 hover:underline">対応画面へ</Link>
+                        ・自動判定
+                      </span>
+                    ) : (
+                      /* 状態切替（手動タスクのみ） */
+                      <div className="flex items-center gap-1">
+                        {(['todo', 'in_progress', 'done'] as const).map((s) => (
+                          <form key={s} action={setTaskStatusAction}>
+                            <input type="hidden" name="task_id" value={t.id} />
+                            <input type="hidden" name="member_id" value={id} />
+                            <input type="hidden" name="status" value={s} />
+                            <button
+                              className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                                t.status === s
+                                  ? s === 'done' ? 'bg-emerald-500 text-white' : s === 'in_progress' ? 'bg-brand-500 text-white' : 'bg-slate-600 text-white'
+                                  : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >
+                              {s === 'todo' ? '未着手' : s === 'in_progress' ? '進行中' : '完了'}
+                            </button>
+                          </form>
+                        ))}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

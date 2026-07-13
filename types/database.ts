@@ -10,12 +10,18 @@ export type MemberStatus = 'pending' | 'active' | 'suspended' | 'cancelled'
 export type PaymentStatus = 'unpaid' | 'paid' | 'overdue'
 export type PlanType = 'semi_auto' | 'full_auto'
 export type DealStatus = 'lead' | 'negotiating' | 'quoted' | 'won' | 'lost'
+/** 加盟店が実行するフロー種別（レビュー⑳）。semi=半自動売買 / auto=自動売買 */
+export type FlowType = 'semi' | 'auto'
 
 export type PlanRow = {
   id: string
   code: string
   name: string
   plan_type: PlanType
+  /** 半自動売買モデルを保有するか（レビュー⑳） */
+  has_semi: boolean
+  /** 自動売買モデルを保有するか（レビュー⑳） */
+  has_auto: boolean
   monthly_fee_yen: number
   joining_fee_yen: number
   display_order: number
@@ -29,6 +35,8 @@ export type PlanInsert = {
   code: string
   name: string
   plan_type: PlanType
+  has_semi?: boolean
+  has_auto?: boolean
   monthly_fee_yen?: number
   joining_fee_yen?: number
   display_order?: number
@@ -62,6 +70,8 @@ export type MemberRow = {
   plan_id: string | null
   contract_date: string | null
   status: MemberStatus
+  /** 実行中フロー（semi/auto）。null=プランの保有モデルから既定導出（レビュー⑳） */
+  active_flow: FlowType | null
   joining_fee_yen: number | null
   monthly_fee_yen: number | null
   working_capital_yen: number | null
@@ -88,6 +98,7 @@ export type MemberInsert = {
   plan_id?: string | null
   contract_date?: string | null
   status?: MemberStatus
+  active_flow?: FlowType | null
   joining_fee_yen?: number | null
   monthly_fee_yen?: number | null
   working_capital_yen?: number | null
@@ -209,6 +220,93 @@ export type ChatMessageRow = {
   created_at: string
 }
 
+export type FundingMethod = 'self' | 'loan'
+
+export type FundingRow = {
+  id: string
+  member_id: string
+  method: FundingMethod | null
+  self_amount_yen: number | null
+  self_confirmed: boolean
+  step_status: Record<string, 'todo' | 'done'>
+  status: 'in_progress' | 'completed'
+  created_at: string
+  updated_at: string
+}
+
+export type AgreementRow = {
+  id: string
+  title: string
+  body: string
+  version: number
+  published: boolean
+  author_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type AgreementConsentRow = {
+  id: string
+  member_id: string
+  agreement_id: string | null
+  agreed_at: string
+  /** 同意時点のスナップショット（証拠保全） */
+  agreement_version: number | null
+  agreement_title: string | null
+  user_id: string | null
+}
+
+export type ManualSectionRow = {
+  id: string
+  title: string
+  body: string | null
+  note: string | null
+  /** このマニュアル項目が属するフロー種別（レビュー⑰）。semi=半自動 / auto=自動 / both=共通 */
+  flow: 'semi' | 'auto' | 'both'
+  sort_order: number
+  published: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ManualProgressRow = {
+  id: string
+  member_id: string
+  section_id: string
+  checked_at: string
+}
+
+export type SupportItemRow = {
+  id: string
+  title: string
+  body: string | null
+  note: string | null
+  sort_order: number
+  published: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type EvidenceKind = 'identity' | 'antique_license' | 'other'
+export type EvidenceDocType = 'license' | 'mynumber' | 'passport' | 'antique' | 'other'
+export type EvidenceStatus = 'pending' | 'approved' | 'rejected'
+
+export type EvidenceRow = {
+  id: string
+  member_id: string
+  kind: EvidenceKind
+  doc_type: EvidenceDocType | null
+  storage_path: string
+  file_name: string
+  file_type: string | null
+  file_size: number | null
+  status: EvidenceStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
+  note: string | null
+  created_at: string
+}
+
 export type OrderStatus = 'received' | 'in_progress' | 'completed' | 'cancelled'
 
 export type OrderRow = {
@@ -237,6 +335,11 @@ export type OnboardingTaskRow = {
   step_label: string
   title: string
   status: OnboardingTaskStatus
+  completion_type: 'auto' | 'manual'
+  /** 実体機能への接続キー（identity/antique_license/funding/terms/manual）。null=手動/自動ボタン */
+  link_key: string | null
+  /** ゲート対象外（古物商など・未提出でも先へ進める） */
+  optional: boolean
   sort_order: number
   due_date: string | null
   completed_at: string | null
@@ -258,6 +361,13 @@ export type Database = {
       notifications: { Row: NotificationRow; Insert: Partial<NotificationRow>; Update: Partial<NotificationRow> }
       onboarding_tasks: { Row: OnboardingTaskRow; Insert: Partial<OnboardingTaskRow>; Update: Partial<OnboardingTaskRow> }
       orders: { Row: OrderRow; Insert: Partial<OrderRow>; Update: Partial<OrderRow> }
+      evidences: { Row: EvidenceRow; Insert: Partial<EvidenceRow>; Update: Partial<EvidenceRow> }
+      agreements: { Row: AgreementRow; Insert: Partial<AgreementRow>; Update: Partial<AgreementRow> }
+      agreement_consents: { Row: AgreementConsentRow; Insert: Partial<AgreementConsentRow>; Update: Partial<AgreementConsentRow> }
+      manual_sections: { Row: ManualSectionRow; Insert: Partial<ManualSectionRow>; Update: Partial<ManualSectionRow> }
+      manual_progress: { Row: ManualProgressRow; Insert: Partial<ManualProgressRow>; Update: Partial<ManualProgressRow> }
+      support_items: { Row: SupportItemRow; Insert: Partial<SupportItemRow>; Update: Partial<SupportItemRow> }
+      funding_applications: { Row: FundingRow; Insert: Partial<FundingRow>; Update: Partial<FundingRow> }
       chat_conversations: { Row: ChatConversationRow; Insert: Partial<ChatConversationRow>; Update: Partial<ChatConversationRow> }
       chat_messages: { Row: ChatMessageRow; Insert: Partial<ChatMessageRow>; Update: Partial<ChatMessageRow> }
       announcements: { Row: AnnouncementRow; Insert: Partial<AnnouncementRow>; Update: Partial<AnnouncementRow> }

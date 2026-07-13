@@ -80,7 +80,7 @@ export default function MemberFormFields({
             </select>
           </div>
           <div>
-            <label className={label}>契約日</label>
+            <label className={label}>契約日<span className="ml-1 text-xs font-normal text-slate-400">（稼働中にする場合は必須）</span></label>
             <input name="contract_date" type="date" defaultValue={member?.contract_date ?? ''} className={field} />
           </div>
           <div>

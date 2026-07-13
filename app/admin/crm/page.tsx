@@ -10,11 +10,11 @@ const field = 'rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:bord
 export default async function CrmPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; member?: string }>
 }) {
   await requireFeature('crm')
   const sp = await searchParams
-  const customers = await listCustomers(sp.q)
+  const customers = await listCustomers(sp.q, sp.member || undefined)
 
   return (
     <div>
@@ -45,6 +45,7 @@ export default async function CrmPage({
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">顧客名</th>
+              <th className="px-4 py-3 font-medium">担当加盟店</th>
               <th className="px-4 py-3 font-medium">連絡先</th>
               <th className="px-4 py-3 font-medium">住所</th>
               <th className="px-4 py-3 font-medium">登録日</th>
@@ -53,7 +54,7 @@ export default async function CrmPage({
           <tbody className="divide-y divide-slate-100">
             {customers.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
                   顧客がいません。
                 </td>
               </tr>
@@ -64,6 +65,15 @@ export default async function CrmPage({
                   <Link href={`/admin/crm/${c.id}`} className="font-medium text-slate-900 hover:underline">
                     {c.name}
                   </Link>
+                </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {c.member ? (
+                    <Link href={`/admin/members/${c.member.id}`} className="text-brand-600 hover:underline">
+                      {c.member.company_name ?? c.member.member_name}
+                    </Link>
+                  ) : (
+                    <span className="text-slate-400">未割当</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-slate-600">{c.email ?? c.phone ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-600">{c.address ?? '—'}</td>
