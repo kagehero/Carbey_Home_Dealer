@@ -36,6 +36,11 @@ export default async function NewMemberPage({
           このメールアドレスは既に別の会員に登録されています。会員ごとに異なるメールアドレスを設定してください（1メール＝1会員）。
         </div>
       )}
+      {sp.error === 'plan_required' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          契約ステータスを「稼働中（active）」にするには契約プランの選択が必須です（半自動／自動／両方のいずれか）。
+        </div>
+      )}
 
       <form action={createMemberAction}>
         <MemberFormFields plans={plans} />

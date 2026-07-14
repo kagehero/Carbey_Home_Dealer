@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
-  Send, Paperclip, X, FileText, Download, Eye, ImageIcon,
+  Send, Paperclip, X, FileText, Download, Eye,
   Search, Pencil, Trash2, Check, CheckCheck, AlertCircle, RotateCcw,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -359,17 +359,37 @@ function MessageBubble({
   )
 }
 
-/* ---------- 添付チップ ---------- */
+/* ---------- 添付（㉘ 画像はインラインでプレビュー表示） ---------- */
 function Attachment({ message, mine, onPreview }: { message: ChatMessageRow; mine: boolean; onPreview: () => void }) {
   const isImage = message.attachment_type?.startsWith('image/')
+  const inlineUrl = `/api/chat/attachment/${message.id}` // inline 配信（プレビュー用）
   const downloadUrl = `/api/chat/attachment/${message.id}?download=1`
   const name = message.attachment_name ?? '添付ファイル'
   const btn = mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
   const pending = message.attachment_path === 'pending'
 
+  // 画像：メッセージ内にサムネイルを直接表示（クリックで拡大）
+  if (isImage && !pending) {
+    return (
+      <div className="mt-1.5">
+        <button type="button" onClick={onPreview} className="block overflow-hidden rounded-lg ring-1 ring-black/10" title="クリックで拡大">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={inlineUrl} alt={name} className="max-h-56 max-w-[240px] object-cover" loading="lazy" />
+        </button>
+        <div className={`mt-1 flex items-center gap-2 text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>
+          <span className="truncate">{name}</span>
+          <a href={downloadUrl} title="ダウンロード" aria-label="ダウンロード" className="inline-flex items-center gap-0.5 hover:underline">
+            <Download className="h-3 w-3" /> 保存
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  // 画像以外（PDF等）：チップ表示＋プレビュー/ダウンロード
   return (
     <div className={`mt-1.5 flex items-center gap-2 rounded-lg px-2.5 py-1.5 ${mine ? 'bg-white/15 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'}`}>
-      {isImage ? <ImageIcon className="h-4 w-4 shrink-0" /> : <FileText className="h-4 w-4 shrink-0" />}
+      <FileText className="h-4 w-4 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs">{name}</div>
         {message.attachment_size != null && <div className={`text-[10px] ${mine ? 'text-white/60' : 'text-slate-400'}`}>{fmtSize(message.attachment_size)}</div>}

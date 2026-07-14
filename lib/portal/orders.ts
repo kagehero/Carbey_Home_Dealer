@@ -1,6 +1,17 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
 import { assertTradingAllowed } from '@/lib/portal/trading'
+import { getOwnOnboarding } from '@/lib/portal/onboarding'
+import { getOwnFlow } from '@/lib/portal/flow'
+import { getLedgerBalance } from '@/lib/portal/ledger'
+import { createDealFromOrder } from '@/lib/portal/deals'
 import type { OrderRow, OrderStatus } from '@/types/database'
+
+/**
+ * ㉜ STEP5：オーダーのオンボーディング完了ゲート（㉚）の有効/無効。
+ * クライアント要望「今回はオーダー権限を解放、次回は制限をかけて再確認」に対応。
+ * true に戻すと「オンボーディング完了までオーダー不可」（要件定義書 論点B）が再度有効になる。
+ */
+export const ORDER_ONBOARDING_GATE = false
 
 export type OrderWithMember = OrderRow & {
   member: { id: string; member_name: string; company_name: string | null } | null
@@ -71,6 +82,21 @@ export async function createOwnOrder(
   userId: string,
   input: Pick<OrderRow, 'maker' | 'car_model' | 'year' | 'budget_yen' | 'preferred_color' | 'mileage_max' | 'notes'>,
 ): Promise<OrderRow> {
+  // ㉚ オンボーディング完了ゲート（要件定義書 論点B：未完了はオーダー不可）
+  // ㉜ STEP5：今回は解放中（ORDER_ONBOARDING_GATE=false）。次回検証時に true へ戻す。
+  if (ORDER_ONBOARDING_GATE) {
+    const onboarding = await getOwnOnboarding(userId)
+    if (!onboarding?.unlocked) {
+      throw new Error('オンボーディングが完了していません。すべてのステップを完了すると仕入れオーダーを作成できます。')
+    }
+  }
+
+  // ㉙ オーダーフォームは半自動売買モデルの運用。自動売買フローでは手動オーダー不可。
+  const flowInfo = await getOwnFlow(userId)
+  if (flowInfo && flowInfo.flow !== 'semi') {
+    throw new Error('自動売買フローでは仕入れは自動化されます（手動オーダーは半自動売買フローでのみ利用できます）。')
+  }
+
   // 取引可否ガード：古物商猶予の超過中は発注不可（自動発注の事故防止）
   await assertTradingAllowed(userId)
 
@@ -82,12 +108,26 @@ export async function createOwnOrder(
     .maybeSingle<{ id: string }>()
   if (!member) throw new Error('会員情報が紐付いていません')
 
+  // フェーズ2 超過オーダー制限：発注金額（予算）は預かり残高より低いこと。
+  //   仕入資金を超えるオーダーを禁止（自動精算の前提）。
+  const balance = await getLedgerBalance(member.id)
+  const orderAmount = input.budget_yen ?? 0
+  if (!orderAmount || orderAmount <= 0) {
+    throw new Error('予算（発注金額）を入力してください。')
+  }
+  if (orderAmount >= balance) {
+    throw new Error(`発注金額（${orderAmount.toLocaleString()}円）が仕入れ資金の預かり残高（${balance.toLocaleString()}円）を超えています。残高の範囲内でオーダーしてください。`)
+  }
+
   const { data, error } = await supabase
     .from('orders')
     .insert({ ...input, member_id: member.id } as never)
     .select('*')
     .single<OrderRow>()
   if (error) throw new Error(error.message)
+
+  // フェーズ3：オーダー送信で車両案件を生成し「仕入れ中」に自動遷移
+  await createDealFromOrder(data)
   return data
 }
 

@@ -142,6 +142,7 @@ function EvidenceItem({ ev }: { ev: EvidenceRow }) {
   const s = STATUS[ev.status]
   const SIcon = s.icon
   const url = `/api/portal/evidence/${ev.id}`
+  const isImage = ev.file_type?.startsWith('image/')
 
   const onDelete = () => {
     start(async () => { await deleteEvidenceAction(ev.id) })
@@ -149,7 +150,15 @@ function EvidenceItem({ ev }: { ev: EvidenceRow }) {
 
   return (
     <li className="flex items-center gap-3 rounded-lg border border-carbon-700 bg-carbon-800/40 px-3 py-2.5">
-      <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+      {/* ㉘ 画像はサムネイルをインライン表示（クリックで拡大） */}
+      {isImage ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" title="クリックで拡大" className="shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={ev.file_name} className="h-10 w-10 rounded object-cover ring-1 ring-carbon-600" loading="lazy" />
+        </a>
+      ) : (
+        <FileText className="h-8 w-8 shrink-0 rounded bg-carbon-700/50 p-1.5 text-slate-400" />
+      )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm text-slate-200">
           {ev.doc_type ? `${DOC_LABEL[ev.doc_type]}：` : ''}{ev.file_name}

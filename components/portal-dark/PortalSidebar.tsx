@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   Home, LayoutDashboard, Car, ClipboardList, LineChart, FileBarChart,
-  MessageSquare, Bell, Settings, ScrollText, Menu, X,
+  MessageSquare, Bell, Settings, ScrollText, Menu, X, GraduationCap,
 } from 'lucide-react'
 import Logo from '@/components/Logo'
 import { cn } from '@/lib/cn'
@@ -21,6 +21,7 @@ const ICONS = {
   announce: Bell,
   settings: Settings,
   terms: ScrollText,
+  training: GraduationCap,
 } as const
 
 export type PortalNavEntry = {

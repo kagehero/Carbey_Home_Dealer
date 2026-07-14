@@ -19,6 +19,7 @@ export default async function PortalLayout({ children }: { children: React.React
     { href: '/portal/dashboard', label: 'ダッシュボード', icon: 'dashboard' },
     { href: '/portal/vehicles', label: '車両管理', icon: 'vehicle', soon: true },
     { href: '/portal/orders', label: 'オーダー管理', icon: 'order' },
+    { href: '/portal/training', label: 'トレーニング', icon: 'training' },
     { href: '/portal/ai', label: 'AI分析・相場', icon: 'ai', soon: true },
     { href: '/portal/reports', label: 'レポート', icon: 'report', soon: true },
     { href: '/portal/chat', label: 'チャット', icon: 'chat' },

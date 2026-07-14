@@ -2,7 +2,7 @@ import { createServiceRoleClient } from '@/lib/supabase/admin'
 import { resolveFlow } from '@/lib/portal/flow'
 import type { ManualSectionRow, FlowType, PlanRow } from '@/types/database'
 
-export type ManualSectionWithCheck = ManualSectionRow & { checked: boolean }
+export type ManualSectionWithCheck = ManualSectionRow & { checked: boolean; attachment_url: string | null }
 
 /** 公開中の実践マニュアル項目（並び順）。flow を指定すると該当フロー（＋both）に限定。 */
 export async function listPublishedSections(flow?: FlowType): Promise<ManualSectionRow[]> {
@@ -41,7 +41,11 @@ export async function getMemberManual(userId: string): Promise<{ sections: Manua
   const { data: prog } = await supabase.from('manual_progress').select('section_id').eq('member_id', member.id)
   const checkedIds = new Set((prog ?? []).map((p: { section_id: string }) => p.section_id))
 
-  const withCheck = sections.map((s) => ({ ...s, checked: checkedIds.has(s.id) }))
+  const withCheck = sections.map((s) => ({
+    ...s,
+    checked: checkedIds.has(s.id),
+    attachment_url: s.attachment_path ? manualMediaUrl(s.attachment_path) : null,
+  }))
   return { sections: withCheck, total: withCheck.length, done: withCheck.filter((s) => s.checked).length, flow }
 }
 
@@ -62,7 +66,25 @@ export async function toggleSectionCheck(userId: string, sectionId: string, chec
   }
 }
 
-/** 本部：項目を保存（新規/更新）。flow でフロー種別を指定（semi/auto/both）。 */
+const MANUAL_BUCKET = 'manual-media'
+
+/** 本部：マニュアル添付ファイルをアップロードし path を返す（㉜）。 */
+export async function uploadManualAttachment(file: { buffer: Buffer; name: string; type: string }): Promise<string> {
+  const supabase = createServiceRoleClient()
+  const safeName = file.name.replace(/[^\w.\-]/g, '_')
+  const path = `sections/${Date.now()}_${safeName}`
+  const { error } = await supabase.storage.from(MANUAL_BUCKET).upload(path, file.buffer, { contentType: file.type, upsert: false })
+  if (error) throw new Error(error.message)
+  return path
+}
+
+/** manual-media の公開URLを返す。 */
+export function manualMediaUrl(path: string): string {
+  const supabase = createServiceRoleClient()
+  return supabase.storage.from(MANUAL_BUCKET).getPublicUrl(path).data.publicUrl
+}
+
+/** 本部：項目を保存（新規/更新）。flow・動画URL・添付を指定可（㉜）。 */
 export async function saveSection(input: {
   id?: string
   title: string
@@ -70,12 +92,21 @@ export async function saveSection(input: {
   note: string | null
   flow: 'semi' | 'auto' | 'both'
   published: boolean
+  video_url?: string | null
+  attachment_path?: string | null
+  attachment_name?: string | null
 }): Promise<void> {
   const supabase = createServiceRoleClient()
+  // 添付は指定があれば上書き、undefined なら既存維持（update時）
+  const media: Record<string, unknown> = { video_url: input.video_url ?? null }
+  if (input.attachment_path !== undefined) {
+    media.attachment_path = input.attachment_path
+    media.attachment_name = input.attachment_name ?? null
+  }
   if (input.id) {
     const { error } = await supabase
       .from('manual_sections')
-      .update({ title: input.title, body: input.body, note: input.note, flow: input.flow, published: input.published } as never)
+      .update({ title: input.title, body: input.body, note: input.note, flow: input.flow, published: input.published, ...media } as never)
       .eq('id', input.id)
     if (error) throw new Error(error.message)
   } else {
@@ -83,7 +114,7 @@ export async function saveSection(input: {
     const sort = (last?.sort_order ?? 0) + 10
     const { error } = await supabase
       .from('manual_sections')
-      .insert({ title: input.title, body: input.body, note: input.note, flow: input.flow, published: input.published, sort_order: sort } as never)
+      .insert({ title: input.title, body: input.body, note: input.note, flow: input.flow, published: input.published, sort_order: sort, ...media } as never)
     if (error) throw new Error(error.message)
   }
 }

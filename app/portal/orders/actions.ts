@@ -31,9 +31,17 @@ export async function createOrderAction(formData: FormData) {
       notes: str(formData.get('notes')),
     })
   } catch (e) {
-    // 古物商猶予の超過などで取引がロックされている場合
-    if (e instanceof Error && e.message.includes('古物商')) {
-      redirect('/portal/orders?error=trading_locked')
+    if (e instanceof Error) {
+      if (e.message.includes('NEXT_REDIRECT')) throw e
+      // ㉚ オンボーディング未完了
+      if (e.message.includes('オンボーディング')) redirect('/portal/orders?error=onboarding_incomplete')
+      // ㉙ 自動売買フローでは手動オーダー不可
+      if (e.message.includes('自動売買')) redirect('/portal/orders?error=auto_flow')
+      // フェーズ2 発注金額の入力漏れ・残高超過
+      if (e.message.includes('予算（発注金額）を入力')) redirect('/portal/orders?error=budget_required')
+      if (e.message.includes('預かり残高')) redirect('/portal/orders?error=over_balance')
+      // 古物商猶予の超過などで取引がロックされている場合
+      if (e.message.includes('古物商')) redirect('/portal/orders?error=trading_locked')
     }
     throw e
   }
