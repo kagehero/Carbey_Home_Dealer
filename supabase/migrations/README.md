@@ -64,5 +64,3 @@ CLI/セルフホストの場合は PostgREST の `db-schemas`（環境変数 `PG
    ```sql
    select portal.attach_user('<user_id>', 'crm_staff', 'スタッフ名', 'staff@example.com');
    ```
-
-   加盟店（member）は会員管理画面から招待される。
