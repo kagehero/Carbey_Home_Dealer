@@ -5,12 +5,14 @@ import {
   CircleDollarSign,
   MessageSquare,
   ShoppingCart,
+  AlertTriangle,
 } from 'lucide-react'
 import { getAdminStats } from '@/lib/portal/dashboard'
 import { listMembers } from '@/lib/portal/members'
 import { listOrders } from '@/lib/portal/orders'
 import { listConversations } from '@/lib/portal/chat'
 import { listAnnouncements } from '@/lib/portal/announcements'
+import { getOverdueOverview } from '@/lib/portal/billing'
 import { yen, ORDER_STATUS_LABEL, ORDER_STATUS_TONE } from '@/lib/portal/labels'
 import { StatCard } from '@/components/ui/StatCard'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
@@ -22,12 +24,13 @@ export const dynamic = 'force-dynamic'
 const DONUT_COLORS = ['#fb2c1d', '#1d5cf0', '#06b6d4', '#f59e0b', '#94a3b8']
 
 export default async function AdminDashboardPage() {
-  const [stats, recentOrders, members, chats, announcements] = await Promise.all([
+  const [stats, recentOrders, members, chats, announcements, overdue] = await Promise.all([
     getAdminStats(),
     listOrders(),
     listMembers(),
     listConversations(),
     listAnnouncements(true, 5),
+    getOverdueOverview(),
   ])
   const m = stats.members
   const totalContracts = stats.planDistribution.reduce((s, p) => s + p.count, 0)
@@ -53,6 +56,32 @@ export default async function AdminDashboardPage() {
         <h1 className="text-xl font-bold text-slate-900">ダッシュボード</h1>
         <p className="text-sm text-slate-500">本部管理者ビュー</p>
       </div>
+
+      {/* ===== 支払遅延の警告（PAY-04） ===== */}
+      {overdue.overdueCount > 0 && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-red-800">
+                支払遅延が {overdue.overdueCount}件（{yen(overdue.overdueYen)}）発生しています
+              </div>
+              <ul className="mt-2 space-y-1">
+                {overdue.members.slice(0, 5).map((mm) => (
+                  <li key={mm.memberId} className="flex items-center justify-between text-xs">
+                    <Link href={`/admin/members/${mm.memberId}`} className="truncate text-red-700 hover:underline">
+                      {mm.companyName ? `${mm.companyName}（${mm.memberName}）` : mm.memberName}
+                    </Link>
+                    <span className="ml-2 shrink-0 font-medium text-red-700">{yen(mm.overdueYen)} / {mm.count}件</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== KPI（実データのみ） ===== */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">

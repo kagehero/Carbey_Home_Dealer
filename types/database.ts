@@ -115,7 +115,28 @@ export type PaymentRow = {
   kind: 'joining' | 'monthly' | 'other'
   status: 'pending' | 'confirmed' | 'failed'
   note: string | null
+  invoice_id: string | null // 消込：紐づく請求（028）
   created_at: string
+}
+
+// 請求・入金消込（要件 5.2 / PAY-01〜04・migration 028）
+export type InvoiceKind =
+  | 'joining' | 'system_fee' | 'monthly' | 'royalty'
+  | 'management_fee' | 'slot_fee' | 'sourcing_fund' | 'other'
+export type InvoiceStatus = 'unbilled' | 'billed' | 'partial' | 'paid' | 'overdue' | 'cancelled'
+export type InvoiceRow = {
+  id: string
+  member_id: string
+  kind: InvoiceKind
+  title: string | null
+  amount_yen: number
+  paid_yen: number
+  due_date: string | null
+  status: InvoiceStatus
+  billed_at: string | null
+  note: string | null
+  created_at: string
+  updated_at: string
 }
 
 // CRM (要求書 5.12): エンドユーザー(購入者)・購入履歴・商談
@@ -453,6 +474,7 @@ export type Database = {
       users: { Row: PortalUserRow; Insert: Partial<PortalUserRow>; Update: Partial<PortalUserRow> }
       members: { Row: MemberRow; Insert: MemberInsert; Update: Partial<MemberInsert> }
       payments: { Row: PaymentRow; Insert: Partial<PaymentRow>; Update: Partial<PaymentRow> }
+      invoices: { Row: InvoiceRow; Insert: Partial<InvoiceRow>; Update: Partial<InvoiceRow> }
       crm_customers: { Row: CrmCustomerRow; Insert: CrmCustomerInsert; Update: Partial<CrmCustomerInsert> }
       crm_purchases: { Row: CrmPurchaseRow; Insert: Partial<CrmPurchaseRow>; Update: Partial<CrmPurchaseRow> }
       crm_deals: { Row: CrmDealRow; Insert: CrmDealInsert; Update: Partial<CrmDealInsert> }
