@@ -50,7 +50,7 @@ export default async function MemberOrdersPage({
   const graceLocked = grace ? !grace.tradingAllowed : false
   const isSemi = flowInfo?.flow === 'semi'
   const isAuto = flowInfo?.flow === 'auto'
-  // ㉜ STEP5：オンボ完了ゲートは今回解放中（ORDER_ONBOARDING_GATE=false）。
+  // ㉜ STEP5：オンボ完了ゲートは現在有効（ORDER_ONBOARDING_GATE=true）。未完了はオーダー不可。
   const onboardingComplete = ORDER_ONBOARDING_GATE ? (onboarding?.unlocked ?? false) : true
   // フォームを出せるのは「半自動フロー かつ （ゲート無効 or オンボ完了） かつ 取引ロックなし」
   const canOrder = isSemi && onboardingComplete && !graceLocked

@@ -12,6 +12,8 @@ import { getOwnFlow } from '@/lib/portal/flow'
 import { listOwnOrders } from '@/lib/portal/orders'
 import { getDealBoardSummary, listOwnActiveDeals, DEAL_STAGE_LABEL } from '@/lib/portal/deals'
 import { listAnnouncements } from '@/lib/portal/announcements'
+import { listInvoices, INVOICE_KIND_LABEL, INVOICE_STATUS_LABEL } from '@/lib/portal/billing'
+import { yen } from '@/lib/portal/labels'
 import { DarkCard, DarkCardHeader, DarkCardBody, DarkStat } from '@/components/portal-dark/DarkUI'
 import { DarkProgressRing } from '@/components/portal-dark/DarkCharts'
 import { ORDER_STATUS_LABEL } from '@/lib/portal/labels'
@@ -20,15 +22,21 @@ export const dynamic = 'force-dynamic'
 
 export default async function MemberDashboardPage() {
   const session = await requireMember()
-  const [member, onboarding, orders, announcements, flowInfo, dealSummary, activeDeals] = await Promise.all([
-    getMemberByUserId(session.userId),
+  const member = await getMemberByUserId(session.userId)
+  const [onboarding, orders, announcements, flowInfo, dealSummary, activeDeals, invoices] = await Promise.all([
     getOwnOnboarding(session.userId),
     listOwnOrders(session.userId),
     listAnnouncements(true, 5),
     getOwnFlow(session.userId),
     getDealBoardSummary(session.userId),
     listOwnActiveDeals(session.userId),
+    member ? listInvoices(member.id) : Promise.resolve([]),
   ])
+
+  // 請求サマリ（PAY-03：消込結果が加盟店側に反映）。未収・遅延・未払いの請求のみ表示。
+  const openInvoices = invoices.filter((inv) => inv.status === 'billed' || inv.status === 'partial' || inv.status === 'overdue')
+  const outstandingYen = openInvoices.reduce((s, inv) => s + Math.max(0, inv.amount_yen - inv.paid_yen), 0)
+  const hasOverdue = openInvoices.some((inv) => inv.status === 'overdue')
 
   const name = member?.member_name ?? session.name ?? 'ゲスト'
   const flow = flowInfo?.flow ?? null // 'auto' | 'semi' | null(プラン未割当)
@@ -141,6 +149,33 @@ export default async function MemberDashboardPage() {
       {nextAction?.done && (
         <div className="flex items-center gap-2 rounded-2xl border border-brand-500/30 bg-brand-500/10 px-5 py-4 text-sm font-medium text-brand-300">
           <CheckCircle2 className="h-5 w-5" /> オンボーディングは完了しています。すべての機能をご利用いただけます。
+        </div>
+      )}
+
+      {/* ===== 請求のお知らせ（PAY-03：本部の消込が反映） ===== */}
+      {openInvoices.length > 0 && (
+        <div className={`rounded-2xl border p-5 ${hasOverdue ? 'border-red-500/30 bg-red-500/10' : 'border-carbon-700 bg-carbon-900/60'}`}>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Package className="h-4 w-4 text-brand-400" /> お支払い
+            </h2>
+            <span className={`text-sm font-semibold ${hasOverdue ? 'text-red-300' : 'text-slate-200'}`}>
+              未払い合計 {yen(outstandingYen)}
+            </span>
+          </div>
+          <ul className="space-y-1.5">
+            {openInvoices.slice(0, 4).map((inv) => (
+              <li key={inv.id} className="flex items-center gap-2 rounded-lg border border-carbon-700 bg-carbon-800/40 px-3 py-2 text-sm">
+                <span className="text-slate-200">{INVOICE_KIND_LABEL[inv.kind]}{inv.title ? `・${inv.title}` : ''}</span>
+                {inv.due_date && <span className={`text-[11px] ${inv.status === 'overdue' ? 'font-semibold text-red-400' : 'text-slate-500'}`}>期限 {inv.due_date}</span>}
+                <span className={`ml-auto rounded px-2 py-0.5 text-[11px] font-medium ${inv.status === 'overdue' ? 'bg-red-500/20 text-red-300' : inv.status === 'partial' ? 'bg-amber-500/20 text-amber-300' : 'bg-carbon-700 text-slate-300'}`}>
+                  {INVOICE_STATUS_LABEL[inv.status]}
+                </span>
+                <span className="w-28 text-right text-slate-200">{yen(Math.max(0, inv.amount_yen - inv.paid_yen))}</span>
+              </li>
+            ))}
+          </ul>
+          {hasOverdue && <p className="mt-2 text-xs text-red-300">お支払い期限を過ぎている請求があります。本部までお問い合わせください。</p>}
         </div>
       )}
 

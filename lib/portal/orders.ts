@@ -9,9 +9,10 @@ import type { OrderRow, OrderStatus } from '@/types/database'
 /**
  * ㉜ STEP5：オーダーのオンボーディング完了ゲート（㉚）の有効/無効。
  * クライアント要望「今回はオーダー権限を解放、次回は制限をかけて再確認」に対応。
- * true に戻すと「オンボーディング完了までオーダー不可」（要件定義書 論点B）が再度有効になる。
+ * 前回は解放（false）で確認済み。今回、要件（5.3 ロック制御・論点B）どおり
+ * 「オンボーディング完了までオーダー不可」を再度有効化する（true）。
  */
-export const ORDER_ONBOARDING_GATE = false
+export const ORDER_ONBOARDING_GATE = true
 
 export type OrderWithMember = OrderRow & {
   member: { id: string; member_name: string; company_name: string | null } | null
@@ -83,7 +84,7 @@ export async function createOwnOrder(
   input: Pick<OrderRow, 'maker' | 'car_model' | 'year' | 'budget_yen' | 'preferred_color' | 'mileage_max' | 'notes'>,
 ): Promise<OrderRow> {
   // ㉚ オンボーディング完了ゲート（要件定義書 論点B：未完了はオーダー不可）
-  // ㉜ STEP5：今回は解放中（ORDER_ONBOARDING_GATE=false）。次回検証時に true へ戻す。
+  // ㉜ STEP5：前回は解放して確認済み。現在は要件どおり有効（ORDER_ONBOARDING_GATE=true）。
   if (ORDER_ONBOARDING_GATE) {
     const onboarding = await getOwnOnboarding(userId)
     if (!onboarding?.unlocked) {

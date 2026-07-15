@@ -9,6 +9,7 @@ import { getFunding, LOAN_STEPS } from '@/lib/portal/funding'
 import { getMemberOrderSummary } from '@/lib/portal/orders'
 import { getMemberCapabilities } from '@/lib/portal/capabilities'
 import { getLedgerBalance, listLedgerEntries } from '@/lib/portal/ledger'
+import { listInvoices, listInvoicePayments, INVOICE_KIND_LABEL, INVOICE_STATUS_LABEL } from '@/lib/portal/billing'
 import { listConsentLog } from '@/lib/portal/agreements'
 import { MEMBER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { Badge } from '@/components/ui/Badge'
@@ -16,7 +17,17 @@ import { updateMemberAction, issueCredentialsAction } from '../actions'
 import { reviewEvidenceAction } from '../evidence-actions'
 import { confirmSelfAction, setAdminStepAction } from '../funding-actions'
 import { addLedgerEntryAction, deleteLedgerEntryAction } from '../ledger-actions'
+import { createInvoiceAction, recordPaymentAction, markBilledAction, cancelInvoiceAction, deleteInvoiceAction } from '../billing-actions'
 import MemberFormFields from '../MemberFormFields'
+
+const INVOICE_STATUS_TONE: Record<string, string> = {
+  unbilled: 'bg-slate-100 text-slate-600',
+  billed: 'bg-info-50 text-info-700',
+  partial: 'bg-amber-50 text-amber-700',
+  paid: 'bg-green-50 text-green-700',
+  overdue: 'bg-red-50 text-red-700',
+  cancelled: 'bg-slate-100 text-slate-400 line-through',
+}
 
 const LEDGER_KIND_LABEL: Record<string, string> = {
   deposit: '入金（デポジット）',
@@ -41,10 +52,23 @@ export default async function MemberDetailPage({
     getMember(id), listPlans(false), listPayments(id), listEvidences(id),
   ])
   if (!member) notFound()
-  const [funding, consents, orderSummary, capabilities, ledgerBalance, ledgerEntries] = await Promise.all([
+  const [funding, consents, orderSummary, capabilities, ledgerBalance, ledgerEntries, invoices] = await Promise.all([
     getFunding(member.id), listConsentLog(member.id), getMemberOrderSummary(member.id), getMemberCapabilities(member.id),
-    getLedgerBalance(member.id), listLedgerEntries(member.id),
+    getLedgerBalance(member.id), listLedgerEntries(member.id), listInvoices(member.id),
   ])
+  // 各請求の消込内訳（入金明細）
+  const invoicePayments = await Promise.all(invoices.map((inv) => listInvoicePayments(inv.id)))
+  const billingTotals = invoices.reduce(
+    (acc, inv) => {
+      if (inv.status === 'cancelled' || inv.status === 'unbilled') return acc
+      acc.billed += inv.amount_yen
+      acc.paid += inv.paid_yen
+      if (inv.status === 'overdue') acc.overdue++
+      return acc
+    },
+    { billed: 0, paid: 0, overdue: 0 },
+  )
+  const outstanding = Math.max(0, billingTotals.billed - billingTotals.paid)
 
   const onboardingPct = member.onboarding_total
     ? Math.round((member.onboarding_done / member.onboarding_total) * 100)
@@ -494,9 +518,145 @@ export default async function MemberDetailPage({
         )}
       </div>
 
+      {/* ===== 請求・入金消込（要件 5.2 消込機能 / PAY-01〜04） ===== */}
+      <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Wallet className="h-4 w-4 text-brand-500" /> 請求・入金消込
+          </h2>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-slate-500">請求 <span className="font-semibold text-slate-800">{yen(billingTotals.billed)}</span></span>
+            <span className="text-slate-500">入金 <span className="font-semibold text-green-700">{yen(billingTotals.paid)}</span></span>
+            <span className="text-slate-500">未収 <span className={`font-semibold ${outstanding > 0 ? 'text-amber-700' : 'text-slate-800'}`}>{yen(outstanding)}</span></span>
+            {billingTotals.overdue > 0 && (
+              <span className="rounded bg-red-50 px-2 py-0.5 font-semibold text-red-700">遅延 {billingTotals.overdue}件</span>
+            )}
+          </div>
+        </div>
+
+        {/* 請求を作成 */}
+        <form action={createInvoiceAction} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <input type="hidden" name="member_id" value={member.id} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">費目 *</label>
+              <select name="kind" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                {Object.entries(INVOICE_KIND_LABEL).map(([k, label]) => (
+                  <option key={k} value={k}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">請求額（円）*</label>
+              <input name="amount" inputMode="numeric" required placeholder="100000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">支払期限</label>
+              <input type="date" name="due_date" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">件名（任意）</label>
+              <input name="title" placeholder="2026年7月分 など" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" name="requested" defaultChecked className="h-4 w-4 rounded border-slate-300 text-brand-500" />
+              作成と同時に「請求済」にする（加盟店に表示されます）
+            </label>
+            <button className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">請求を追加</button>
+          </div>
+        </form>
+
+        {/* 請求一覧（消込状況） */}
+        <div className="space-y-3">
+          {invoices.length === 0 && (
+            <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">請求はまだありません。</p>
+          )}
+          {invoices.map((inv, i) => {
+            const remaining = Math.max(0, inv.amount_yen - inv.paid_yen)
+            const pct = inv.amount_yen > 0 ? Math.min(100, Math.round((inv.paid_yen / inv.amount_yen) * 100)) : 0
+            const done = inv.status === 'paid' || inv.status === 'cancelled'
+            return (
+              <div key={inv.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-900">{INVOICE_KIND_LABEL[inv.kind]}</span>
+                  {inv.title && <span className="text-xs text-slate-500">{inv.title}</span>}
+                  <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${INVOICE_STATUS_TONE[inv.status]}`}>{INVOICE_STATUS_LABEL[inv.status]}</span>
+                  {inv.due_date && (
+                    <span className={`text-[11px] ${inv.status === 'overdue' ? 'font-semibold text-red-600' : 'text-slate-400'}`}>期限 {inv.due_date}</span>
+                  )}
+                  <span className="ml-auto text-sm text-slate-700">
+                    <span className="font-semibold text-green-700">{yen(inv.paid_yen)}</span> / {yen(inv.amount_yen)}
+                    {remaining > 0 && inv.status !== 'cancelled' && <span className="ml-2 text-amber-700">残 {yen(remaining)}</span>}
+                  </span>
+                </div>
+
+                {/* 消込プログレス */}
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div className={`h-full rounded-full ${inv.status === 'overdue' ? 'bg-red-400' : done ? 'bg-green-500' : 'bg-brand-400'}`} style={{ width: `${pct}%` }} />
+                </div>
+
+                {/* 消込内訳（入金明細） */}
+                {invoicePayments[i].length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {invoicePayments[i].map((p) => (
+                      <li key={p.id} className="flex items-center gap-2 text-xs text-slate-500">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> {p.payment_date} 入金 <span className="font-medium text-slate-700">{yen(p.amount_yen)}</span>
+                        {p.note && <span className="text-slate-400">（{p.note}）</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* 操作：消込（入金記録）・請求発行・取消 */}
+                {inv.status !== 'cancelled' && inv.status !== 'paid' && (
+                  <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+                    <form action={recordPaymentAction} className="flex items-end gap-2">
+                      <input type="hidden" name="invoice_id" value={inv.id} />
+                      <input type="hidden" name="member_id" value={member.id} />
+                      <div>
+                        <label className="mb-0.5 block text-[11px] text-slate-500">入金額（消込）</label>
+                        <input name="amount" inputMode="numeric" required defaultValue={remaining || ''} placeholder="金額" className="w-32 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+                      </div>
+                      <div>
+                        <label className="mb-0.5 block text-[11px] text-slate-500">入金日</label>
+                        <input type="date" name="payment_date" className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+                      </div>
+                      <button className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">消込する</button>
+                    </form>
+                    {inv.status === 'unbilled' && (
+                      <form action={markBilledAction}>
+                        <input type="hidden" name="id" value={inv.id} />
+                        <input type="hidden" name="member_id" value={member.id} />
+                        <button className="rounded-lg border border-info-300 px-3 py-1.5 text-xs font-medium text-info-700 hover:bg-info-50">請求を発行</button>
+                      </form>
+                    )}
+                    <form action={cancelInvoiceAction} className="ml-auto">
+                      <input type="hidden" name="id" value={inv.id} />
+                      <input type="hidden" name="member_id" value={member.id} />
+                      <button className="rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:text-red-600">取消</button>
+                    </form>
+                  </div>
+                )}
+                {(inv.status === 'cancelled' || inv.status === 'paid') && (
+                  <div className="mt-2 flex justify-end border-t border-slate-100 pt-2">
+                    <form action={deleteInvoiceAction}>
+                      <input type="hidden" name="id" value={inv.id} />
+                      <input type="hidden" name="member_id" value={member.id} />
+                      <button className="text-xs text-slate-400 hover:text-red-600">削除</button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
       {/* 入金履歴 */}
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">入金履歴（加盟金・月額）</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">入金履歴（すべての入金）</h2>
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-left text-slate-500">
