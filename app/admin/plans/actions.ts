@@ -20,16 +20,32 @@ function features(v: FormDataEntryValue | null): string[] {
   return s.split('\n').map((x) => x.trim()).filter(Boolean)
 }
 
+/**
+ * レビュー⑫：半自動・全自動は「どちらか一方」ではなく、それぞれ独立に割り当てる。
+ * plan_type は旧来の区分表示のために残っており、保有モデルから導出する
+ * （全自動を含む→full_auto／半自動のみ→semi_auto）。真実は has_semi / has_auto。
+ */
+function derivePlanType(hasSemi: boolean, hasAuto: boolean): PlanType {
+  return hasAuto ? 'full_auto' : 'semi_auto'
+}
+
 export async function createPlanAction(formData: FormData) {
   await requireAdmin()
   const code = str(formData.get('code'))
   const name = str(formData.get('name'))
   if (!code || !name) redirect('/admin/plans/new?error=required')
 
+  // ⑫ 保有モデルは個別に割り当て（両方可）。最低1つは必要。
+  const has_semi = formData.get('has_semi') === 'on'
+  const has_auto = formData.get('has_auto') === 'on'
+  if (!has_semi && !has_auto) redirect('/admin/plans/new?error=model_required')
+
   await createPlan({
     code,
     name,
-    plan_type: (str(formData.get('plan_type')) ?? 'full_auto') as PlanType,
+    plan_type: derivePlanType(has_semi, has_auto),
+    has_semi,
+    has_auto,
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     display_order: num(formData.get('display_order')),
@@ -45,11 +61,17 @@ export async function updatePlanAction(formData: FormData) {
   await requireAdmin()
   const id = str(formData.get('id'))
   if (!id) redirect('/admin/plans')
+
+  const has_semi = formData.get('has_semi') === 'on'
+  const has_auto = formData.get('has_auto') === 'on'
+  if (!has_semi && !has_auto) redirect('/admin/plans?error=model_required')
+
   await updatePlan(id, {
     name: str(formData.get('name')) ?? undefined,
-    plan_type: (str(formData.get('plan_type')) ?? undefined) as PlanType | undefined,
-    has_semi: formData.get('has_semi') === 'on',
-    has_auto: formData.get('has_auto') === 'on',
+    // plan_type は保有モデルから導出し、常に整合させる
+    plan_type: derivePlanType(has_semi, has_auto),
+    has_semi,
+    has_auto,
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     display_order: num(formData.get('display_order')),

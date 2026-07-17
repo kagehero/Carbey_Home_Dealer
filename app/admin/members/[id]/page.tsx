@@ -135,7 +135,12 @@ export default async function MemberDetailPage({
       )}
       {sp.error === 'plan_required' && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          契約ステータスを「稼働中（active）」にするには契約プランの選択が必須です（半自動／自動／両方のいずれか）。プランを選択して保存してください。
+          契約ステータスを「稼働中（active）」にするには契約プランの選択が必須です。プランを選択して保存してください。
+        </div>
+      )}
+      {sp.error === 'grant_required' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          契約ステータスを「稼働中（active）」にするには、運用方式の権限（セミオート／フルオート／両方）を1つ以上割り当ててください。
         </div>
       )}
 
@@ -179,19 +184,34 @@ export default async function MemberDetailPage({
 
       {/* サマリ行 */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* ④ プラン（契約）と 運用方式の権限（セミ/フル）は別設定。実効フローも併記する。 */}
         <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">プラン / フロー</div>
+          <div className="text-xs text-slate-500">プラン / 権限 / フロー</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             {member.plan ? (
-              <Badge tone={member.plan.code?.includes('full') || member.plan.name?.includes('フル') ? 'brand' : 'slate'}>
-                {member.plan.name}
-              </Badge>
+              <Badge tone="slate">{member.plan.name}</Badge>
             ) : (
-              <span className="text-sm font-semibold text-amber-600">未割当</span>
+              <span className="text-sm font-semibold text-amber-600">プラン未割当</span>
             )}
-            {member.active_flow && (
+            {member.grant_semi && (
+              <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">セミオート</span>
+            )}
+            {member.grant_auto && (
+              <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-600">フルオート</span>
+            )}
+            {!member.grant_semi && !member.grant_auto && (
+              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">運用権限なし</span>
+            )}
+            {/* ㉕ オンボーディング未完了でも取引可の特例 */}
+            {member.trading_override && (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" title="オンボーディング未完了でも仕入れオーダーを許可しています">
+                取引 特例許可
+              </span>
+            )}
+            {/* 実効フロー（active_flow 未設定でも権限から導出される） */}
+            {capabilities && (member.grant_semi || member.grant_auto) && (
               <span className="rounded bg-info-50 px-1.5 py-0.5 text-[10px] font-medium text-info-700">
-                {member.active_flow === 'auto' ? '自動売買' : '半自動売買'}
+                現在：{capabilities.flow === 'auto' ? '自動売買' : '半自動売買'}
               </span>
             )}
           </div>
@@ -265,14 +285,14 @@ export default async function MemberDetailPage({
         </div>
       </div>
 
-      {/* ===== 利用可能機能（プラン・フロー連動で自動制御／㉕） ===== */}
+      {/* ===== 利用可能機能（権限・フロー連動で自動制御／㉕・④） ===== */}
       {capabilities && (
         <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <KeyRound className="h-4 w-4 text-brand-500" /> 利用可能機能（プラン連動・自動制御）
+            <KeyRound className="h-4 w-4 text-brand-500" /> 利用可能機能（権限連動・自動制御）
           </h2>
           <p className="mb-3 text-xs text-slate-500">
-            プラン・売買フロー・オンボーディング完了状況・古物商猶予に応じて自動で制御されます（手動設定ではありません）。
+            運用方式の権限・売買フロー・オンボーディング完了状況・古物商猶予に応じて自動で制御されます（ここでの手動設定ではありません）。
             現在のフロー：<span className="font-medium text-slate-700">{capabilities.flow === 'auto' ? '自動売買' : '半自動売買'}</span>
           </p>
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">

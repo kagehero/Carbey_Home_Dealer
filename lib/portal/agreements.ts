@@ -107,6 +107,11 @@ export async function saveAgreement(input: {
     if (latest) {
       await supabase.from('agreements').update({ published: false } as never).eq('published', true).neq('id', latest.id)
     }
+    // ⑥ 規約を新版で公開すると旧版への同意は無効になる。
+    // 全加盟店の terms タスクを即座に「未完了」へ戻し、再同意するまで機能制限がかかる状態にする。
+    // （同期を待たずに本部側の進捗表示にも反映される）
+    const { error: sErr } = await supabase.rpc('sync_all_onboarding_status')
+    if (sErr) throw new Error(sErr.message)
   }
 }
 

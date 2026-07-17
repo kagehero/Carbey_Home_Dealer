@@ -6,7 +6,24 @@ import { uploadEvidence, deleteOwnEvidence } from '@/lib/portal/evidence'
 import type { EvidenceKind, EvidenceDocType } from '@/types/database'
 
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
-const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf']
+
+/**
+ * 受理するファイル（レビュー⑨で緩和）。
+ * 以前は jpeg/png/webp/heic/pdf の5種のみを許可していたが、選択側は accept="image/*" で
+ * あらゆる画像を選べたため、gif/avif/heif/bmp や、iPhone の HEIC でブラウザが種別を
+ * 返さないケース（file.type が空）が「画像またはPDFを提出してください」で弾かれていた。
+ * → 画像全般（image/*）と PDF を受理し、種別が空のときは拡張子で判定する。
+ */
+const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'bmp', 'tif', 'tiff', 'avif']
+const ALLOWED_EXT = [...IMAGE_EXT, 'pdf']
+
+function isAcceptable(file: File): boolean {
+  const type = (file.type || '').toLowerCase()
+  if (type.startsWith('image/') || type === 'application/pdf') return true
+  // ブラウザが種別を返さない場合は拡張子で判定する
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return ALLOWED_EXT.includes(ext)
+}
 
 const IDENTITY_DOCS: EvidenceDocType[] = ['license', 'mynumber', 'passport']
 
@@ -19,8 +36,12 @@ export async function uploadEvidenceAction(formData: FormData): Promise<{ ok: bo
 
   if (!['identity', 'antique_license', 'other'].includes(kind)) return { ok: false, error: '種別が不正です' }
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: 'ファイルを選択してください' }
-  if (file.size > MAX_SIZE) return { ok: false, error: 'ファイルサイズは10MBまでです' }
-  if (!ALLOWED.includes(file.type)) return { ok: false, error: '画像またはPDFを提出してください' }
+  if (file.size > MAX_SIZE) {
+    return { ok: false, error: `ファイルサイズは10MBまでです（選択されたファイル：${(file.size / 1024 / 1024).toFixed(1)}MB）` }
+  }
+  if (!isAcceptable(file)) {
+    return { ok: false, error: `画像またはPDFを提出してください（選択されたファイル：${file.name}${file.type ? `／${file.type}` : ''}）` }
+  }
 
   // 本人確認は顔写真付き身分証に限定
   let docType: EvidenceDocType | null = null

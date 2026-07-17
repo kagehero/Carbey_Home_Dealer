@@ -1,6 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
 import { resolveFlow } from '@/lib/portal/flow'
-import type { ManualSectionRow, FlowType, PlanRow } from '@/types/database'
+import type { ManualSectionRow, FlowType } from '@/types/database'
 
 export type ManualSectionWithCheck = ManualSectionRow & { checked: boolean; attachment_url: string | null }
 
@@ -31,12 +31,13 @@ export async function getMemberManual(userId: string): Promise<{ sections: Manua
   const supabase = createServiceRoleClient()
   const { data: member } = await supabase
     .from('members')
-    .select('id, active_flow, plan:plans(has_semi, has_auto)')
+    .select('id, active_flow, grant_semi, grant_auto')
     .eq('user_id', userId)
-    .maybeSingle<{ id: string; active_flow: FlowType | null; plan: Pick<PlanRow, 'has_semi' | 'has_auto'> | null }>()
+    .maybeSingle<{ id: string; active_flow: FlowType | null; grant_semi: boolean; grant_auto: boolean }>()
   if (!member) return null
 
-  const flow = resolveFlow(member.plan, member.active_flow)
+  // レビュー④：運用方式は会員ごとの権限で判定（プラン従属をやめた）
+  const flow = resolveFlow({ grant_semi: member.grant_semi, grant_auto: member.grant_auto }, member.active_flow)
   const sections = await listPublishedSections(flow)
   const { data: prog } = await supabase.from('manual_progress').select('section_id').eq('member_id', member.id)
   const checkedIds = new Set((prog ?? []).map((p: { section_id: string }) => p.section_id))

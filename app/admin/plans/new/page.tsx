@@ -27,6 +27,11 @@ export default async function NewPlanPage({
       {sp.error === 'required' && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">コードとプラン名は必須です。</div>
       )}
+      {sp.error === 'model_required' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          利用できる運用方式（半自動／全自動）を1つ以上選択してください。
+        </div>
+      )}
 
       <form action={createPlanAction} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="grid grid-cols-2 gap-4">
@@ -35,16 +40,33 @@ export default async function NewPlanPage({
             <input name="code" required placeholder="例: platinum" className={`${field} font-mono`} />
           </div>
           <div>
-            <label className={label}>種別</label>
-            <select name="plan_type" defaultValue="full_auto" className={field}>
-              <option value="full_auto">全自動</option>
-              <option value="semi_auto">半自動</option>
-            </select>
+            <label className={label}>プラン名 *</label>
+            <input name="name" required className={field} />
           </div>
         </div>
-        <div>
-          <label className={label}>プラン名 *</label>
-          <input name="name" required className={field} />
+
+        {/* ⑫ 半自動・全自動は二者択一ではなく、それぞれ独立に割り当てる（両方可） */}
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-1 text-sm font-medium text-slate-700">利用できる運用方式 *</div>
+          <p className="mb-2.5 text-xs text-slate-500">
+            それぞれ個別に割り当てられます。両方を選ぶと、このプランの加盟店は半自動・全自動の両方を利用でき、フローの切り替えも可能になります。
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50">
+              <input type="checkbox" name="has_semi" defaultChecked className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
+              <span>
+                <span className="block text-sm font-medium text-slate-800">半自動（セミオート）</span>
+                <span className="block text-xs text-slate-500">加盟者が仕入れオーダーを送り、自身で販売する</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50">
+              <input type="checkbox" name="has_auto" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
+              <span>
+                <span className="block text-sm font-medium text-slate-800">全自動（フルオート）</span>
+                <span className="block text-xs text-slate-500">本部主導で仕入れ〜販売まで運用</span>
+              </span>
+            </label>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <div>

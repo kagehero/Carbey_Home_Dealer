@@ -5,7 +5,7 @@ import { requireFeature } from '@/lib/auth/session'
 import { getMember } from '@/lib/portal/members'
 import { listOnboardingTasks, buildOnboardingView, ensureOnboardingTasks, syncOnboardingStatus } from '@/lib/portal/onboarding'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
-import { setTaskStatusAction, seedTasksAction } from '../actions'
+import { setTaskStatusAction, seedTasksAction, clearTaskOverrideAction } from '../actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,6 +52,8 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
           <p className="mt-0.5 text-[13px] leading-relaxed">
             契約日の登録・加盟店の手続き（本人確認提出／資金／規約／マニュアル）に応じてタスクは自動で完了します。
             本部の手動操作が必要なのは<span className="font-semibold">本人確認書類の承認</span>のみです（下記「対応画面へ」から）。
+            なお、動作確認や例外対応が必要な場合は<span className="font-semibold">自動判定のタスクも本部が強制的に切り替えられます</span>
+            （上書き中は自動判定が止まります。「自動判定に戻す」で元の自動運用へ戻せます）。
           </p>
         </div>
       </div>
@@ -98,14 +100,19 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
                       {t.title}
                       {t.optional && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">任意</span>}
                     </span>
-                    {t.link_key ? (
-                      // 実体で自動判定されるタスク（本人確認/資金/規約/マニュアル）。手動切替は不可。
-                      <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                        <Link href={`/admin/members/${id}`} className="text-brand-600 hover:underline">対応画面へ</Link>
-                        ・自動判定
-                      </span>
-                    ) : (
-                      /* 状態切替（手動タスクのみ） */
+                    {/* ⑪-① 自動判定タスクも本部が強制的に切り替えられる（上書き＝sync対象外）。
+                           上書き中は「自動判定に戻す」で実体に再同期できる。 */}
+                    <div className="flex items-center gap-2">
+                      {t.link_key && (
+                        <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                          <Link href={`/admin/members/${id}`} className="text-brand-600 hover:underline">対応画面へ</Link>
+                          {t.admin_override ? (
+                            <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">上書き中</span>
+                          ) : (
+                            <span>・自動判定</span>
+                          )}
+                        </span>
+                      )}
                       <div className="flex items-center gap-1">
                         {(['todo', 'in_progress', 'done'] as const).map((s) => (
                           <form key={s} action={setTaskStatusAction}>
@@ -118,13 +125,23 @@ export default async function AdminOnboardingDetailPage({ params }: { params: Pr
                                   ? s === 'done' ? 'bg-emerald-500 text-white' : s === 'in_progress' ? 'bg-brand-500 text-white' : 'bg-slate-600 text-white'
                                   : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
                               }`}
+                              title={t.link_key ? '自動判定を上書きします（テスト・例外運用）' : undefined}
                             >
                               {s === 'todo' ? '未着手' : s === 'in_progress' ? '進行中' : '完了'}
                             </button>
                           </form>
                         ))}
+                        {t.link_key && t.admin_override && (
+                          <form action={clearTaskOverrideAction}>
+                            <input type="hidden" name="task_id" value={t.id} />
+                            <input type="hidden" name="member_id" value={id} />
+                            <button className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50" title="上書きを解除し、実体（提出・同意の状況）に合わせて再判定します">
+                              自動判定に戻す
+                            </button>
+                          </form>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </li>
                 ))}
               </ul>

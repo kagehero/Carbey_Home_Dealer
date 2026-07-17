@@ -1,13 +1,13 @@
 import Link from 'next/link'
 import { Plus, CheckCircle2, ShoppingCart, Lock, Repeat, Bot, ClipboardList } from 'lucide-react'
 import { requireMember } from '@/lib/auth/session'
-import { listOwnOrders, ORDER_ONBOARDING_GATE } from '@/lib/portal/orders'
+import { listOwnOrders, ORDER_ONBOARDING_GATE, hasTradingOverride } from '@/lib/portal/orders'
 import { getOwnAntiqueGrace } from '@/lib/portal/trading'
 import { getOwnFlow } from '@/lib/portal/flow'
 import { getOwnOnboarding } from '@/lib/portal/onboarding'
 import { getMemberByUserId } from '@/lib/portal/members'
 import { getLedgerBalance } from '@/lib/portal/ledger'
-import { listOwnActiveDeals, listOwnDealHistory, DEAL_STAGE_LABEL } from '@/lib/portal/deals'
+import { listOwnActiveDeals, listOwnDealHistory, mapDealsByOrderId, DEAL_STAGE_LABEL } from '@/lib/portal/deals'
 import DealBoard from '@/components/portal-dark/DealBoard'
 import { ORDER_STATUS_LABEL, yen } from '@/lib/portal/labels'
 import { DarkCard, DarkCardHeader, DarkCardBody } from '@/components/portal-dark/DarkUI'
@@ -34,24 +34,28 @@ export default async function MemberOrdersPage({
   searchParams: Promise<{ created?: string; error?: string }>
 }) {
   const session = await requireMember()
-  const [orders, grace, flowInfo, onboarding, member] = await Promise.all([
+  const [orders, grace, flowInfo, onboarding, member, tradingOverride] = await Promise.all([
     listOwnOrders(session.userId),
     getOwnAntiqueGrace(session.userId),
     getOwnFlow(session.userId),
     getOwnOnboarding(session.userId),
     getMemberByUserId(session.userId),
+    hasTradingOverride(session.userId),
   ])
   const balance = member ? await getLedgerBalance(member.id) : 0
   const [activeDeals, dealHistory] = await Promise.all([
     listOwnActiveDeals(session.userId),
     listOwnDealHistory(session.userId),
   ])
+  // ⑧ オーダー履歴から取引（案件）の詳細へ遷移できるようにするための突合
+  const dealsByOrder = await mapDealsByOrderId(orders.map((o) => o.id))
   const sp = await searchParams
   const graceLocked = grace ? !grace.tradingAllowed : false
   const isSemi = flowInfo?.flow === 'semi'
   const isAuto = flowInfo?.flow === 'auto'
   // ㉜ STEP5：オンボ完了ゲートは現在有効（ORDER_ONBOARDING_GATE=true）。未完了はオーダー不可。
-  const onboardingComplete = ORDER_ONBOARDING_GATE ? (onboarding?.unlocked ?? false) : true
+  // ㉕ ただし本部が特例で許可（trading_override）していれば未完了でもオーダー可。
+  const onboardingComplete = ORDER_ONBOARDING_GATE ? ((onboarding?.unlocked ?? false) || tradingOverride) : true
   // フォームを出せるのは「半自動フロー かつ （ゲート無効 or オンボ完了） かつ 取引ロックなし」
   const canOrder = isSemi && onboardingComplete && !graceLocked
 
@@ -206,29 +210,57 @@ export default async function MemberOrdersPage({
                   <th className="px-5 py-3 font-medium">車両</th>
                   <th className="px-5 py-3 font-medium">予算</th>
                   <th className="px-5 py-3 font-medium">ステータス</th>
+                  <th className="px-5 py-3 font-medium">売買進捗</th>
                   <th className="px-5 py-3 font-medium">依頼日</th>
+                  <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-carbon-700">
                 {orders.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-slate-500">
                       <ShoppingCart className="mx-auto mb-2 h-6 w-6 text-slate-600" />
                       まだオーダーがありません。上のフォームから依頼できます。
                     </td>
                   </tr>
                 )}
-                {orders.map((o) => (
-                  <tr key={o.id} className="hover:bg-white/5">
-                    <td className="px-5 py-3 font-medium text-slate-200">{o.order_number ?? '—'}</td>
-                    <td className="px-5 py-3 text-slate-300">{[o.maker, o.car_model, o.year].filter(Boolean).join(' ')}</td>
-                    <td className="px-5 py-3 text-slate-300">{o.budget_yen ? yen(o.budget_yen) : '—'}</td>
-                    <td className="px-5 py-3">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[o.status]}`}>{ORDER_STATUS_LABEL[o.status]}</span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-500">{new Date(o.created_at).toLocaleDateString('ja-JP')}</td>
-                  </tr>
-                ))}
+                {orders.map((o) => {
+                  // ⑧ 案件があれば行から取引詳細へ遷移できる
+                  const deal = dealsByOrder.get(o.id)
+                  return (
+                    <tr key={o.id} className="hover:bg-white/5">
+                      <td className="px-5 py-3 font-medium">
+                        {deal ? (
+                          <Link href={`/portal/orders/deal/${deal.id}`} className="text-brand-400 hover:underline">
+                            {o.order_number ?? '—'}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-200">{o.order_number ?? '—'}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-slate-300">{[o.maker, o.car_model, o.year].filter(Boolean).join(' ')}</td>
+                      <td className="px-5 py-3 text-slate-300">{o.budget_yen ? yen(o.budget_yen) : '—'}</td>
+                      <td className="px-5 py-3">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[o.status]}`}>{ORDER_STATUS_LABEL[o.status]}</span>
+                      </td>
+                      <td className="px-5 py-3">
+                        {deal ? (
+                          <span className="text-xs font-medium text-slate-300">{DEAL_STAGE_LABEL[deal.status]}</span>
+                        ) : (
+                          <span className="text-xs text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-slate-500">{new Date(o.created_at).toLocaleDateString('ja-JP')}</td>
+                      <td className="px-5 py-3 text-right">
+                        {deal && (
+                          <Link href={`/portal/orders/deal/${deal.id}`} className="whitespace-nowrap text-xs font-medium text-brand-400 hover:underline">
+                            詳細を見る →
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

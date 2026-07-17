@@ -82,6 +82,31 @@ export function getNextAction(view: OnboardingView): NextAction {
   }
 }
 
+/**
+ * 複数加盟店のオンボーディングビューを一括取得（本部の一覧で進捗ステッパーを描くのに使う）。
+ * タスクを1クエリでまとめて取得し、加盟店ごとに畳み込む（N+1を避ける）。
+ */
+export async function mapOnboardingViews(memberIds: string[]): Promise<Map<string, OnboardingView>> {
+  const map = new Map<string, OnboardingView>()
+  if (memberIds.length === 0) return map
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase
+    .from('onboarding_tasks')
+    .select('*')
+    .in('member_id', memberIds)
+    .order('sort_order', { ascending: true })
+  if (error) throw new Error(error.message)
+
+  const byMember = new Map<string, OnboardingTaskRow[]>()
+  for (const t of (data ?? []) as unknown as OnboardingTaskRow[]) {
+    const arr = byMember.get(t.member_id) ?? []
+    arr.push(t)
+    byMember.set(t.member_id, arr)
+  }
+  for (const [memberId, tasks] of byMember) map.set(memberId, buildOnboardingView(tasks))
+  return map
+}
+
 /** 加盟店のオンボーディングタスク一覧（生）。 */
 export async function listOnboardingTasks(memberId: string): Promise<OnboardingTaskRow[]> {
   const supabase = createServiceRoleClient()
@@ -192,15 +217,42 @@ export async function getOwnOnboarding(userId: string): Promise<OnboardingView |
   return buildOnboardingView(tasks)
 }
 
-/** タスクの状態を変更する（本部）。done のとき completed_at を打刻。 */
+/**
+ * タスクの状態を変更する（本部）。done のとき completed_at を打刻。
+ * 自動判定タスク（link_key 付き）を本部が変更した場合は admin_override を立て、
+ * 以降 sync に上書きされないようにする（レビュー⑪-①：テスト・例外運用）。
+ */
 export async function updateTaskStatus(taskId: string, status: OnboardingTaskStatus): Promise<void> {
   const supabase = createServiceRoleClient()
+  const { data: task } = await supabase
+    .from('onboarding_tasks')
+    .select('link_key')
+    .eq('id', taskId)
+    .maybeSingle<{ link_key: string | null }>()
+
   const patch: Partial<OnboardingTaskRow> = {
     status,
     completed_at: status === 'done' ? new Date().toISOString() : null,
   }
+  // 自動判定タスクを手で動かすときだけ上書きフラグを立てる
+  if (task?.link_key) patch.admin_override = true
+
   const { error } = await supabase.from('onboarding_tasks').update(patch as never).eq('id', taskId)
   if (error) throw new Error(error.message)
+}
+
+/**
+ * 自動判定タスクの上書きを解除し、実体に合わせて再同期する（本部）。
+ * 「自動判定に戻す」操作。
+ */
+export async function clearTaskOverride(taskId: string, memberId: string): Promise<void> {
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase
+    .from('onboarding_tasks')
+    .update({ admin_override: false } as never)
+    .eq('id', taskId)
+  if (error) throw new Error(error.message)
+  await syncOnboardingStatus(memberId)
 }
 
 /** 加盟店に既定タスクが無ければ生成する（本部画面を開いたときの保険）。 */
