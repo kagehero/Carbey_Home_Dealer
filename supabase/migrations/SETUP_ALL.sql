@@ -2958,6 +2958,351 @@ grant all on portal.invoices to service_role;
 
 
 -- #####################################################################
+-- ## 029_backfill_deals.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 既存オーダーへの案件（進捗）バックフィル
+-- =====================================================================
+-- 背景（クライアントレビュー 2026-07-15）:
+--   本部オーダー管理で「各オーダーごとの半自動売買の進捗」を可視化する要望。
+--   vehicle_deals（migration 023）より前に作成されたオーダーには案件が無く、
+--   進捗が「案件なし」と表示されてしまうため、既存オーダーに案件を補完する。
+--
+--   遷移の割当（オーダー送信＝仕入れ中に自動遷移、という本来の仕様に合わせる）:
+--     cancelled  → 対象外（案件を作らない）
+--     completed  → delivered（納品完了。ただし settled=false：
+--                  自動精算の実装より前の取引のため精算記録は作らない）
+--     それ以外   → sourcing（仕入れ中）
+--
+--   案件が既にあるオーダーは対象外（not exists）。何度実行しても安全（冪等）。
+-- =====================================================================
+
+insert into portal.vehicle_deals (
+  member_id, order_id, status, maker, car_model, year, order_amount_yen,
+  ordered_at, sourcing_at, delivered_at, note
+)
+select
+  o.member_id,
+  o.id,
+  case when o.status = 'completed' then 'delivered' else 'sourcing' end,
+  o.maker,
+  o.car_model,
+  o.year,
+  o.budget_yen,
+  o.created_at,
+  o.created_at,                                                    -- オーダー送信＝仕入れ中の起点
+  case when o.status = 'completed' then o.updated_at else null end,
+  '既存オーダーからの補完（029）'
+from portal.orders o
+where o.status <> 'cancelled'
+  and not exists (
+    select 1 from portal.vehicle_deals d where d.order_id = o.id
+  );
+
+
+-- #####################################################################
+-- ## 030_member_model_grants.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 運用方式（セミオート/フルオート）の権限を会員ごとに個別設定
+-- =====================================================================
+-- クライアントレビュー④（2026-07-15）:
+--   「セミオートと、それ以外のプランで運用方式が異なるので、プルダウン設定に入れずに
+--     別設定できるようにしてください。フルオートとセミオートは権限を割り当てたら
+--     両方利用できる仕様で。セミオート権限＋フルオート権限＋両方もってる権限です」
+--
+--   これまで運用方式は plans.has_semi / has_auto（＝プランのプルダウン）に従属していた。
+--   本migrationで members に権限を持たせ、プラン選択から独立して割り当てられるようにする。
+--     grant_semi = true → 半自動売買（セミオート）を利用可
+--     grant_auto = true → 自動売買（フルオート）を利用可
+--     両方 true        → 両方利用可＋フロー切替可
+--   プランの has_semi / has_auto は「新規割当時の既定値」として引き続き利用する。
+--
+-- レビュー⑥（規約更新→未同意→機能制限）:
+--   規約を新版で公開すると、旧版への同意は無効になり terms タスクは todo に戻るべきだが、
+--   sync は「その加盟店の画面を開いたとき」しか走らず、本部側の表示が古いままだった。
+--   全加盟店を一括同期する関数を追加し、規約の公開時に呼べるようにする。
+-- 冪等化のため if not exists を併用。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) 会員ごとの運用方式の権限
+-- ---------------------------------------------------------------------
+alter table portal.members add column if not exists grant_semi boolean not null default true;   -- セミオート権限
+alter table portal.members add column if not exists grant_auto boolean not null default false;  -- フルオート権限
+
+comment on column portal.members.grant_semi is '半自動売買（セミオート）の利用権限。プランとは独立して本部が割り当てる';
+comment on column portal.members.grant_auto is '自動売買（フルオート）の利用権限。プランとは独立して本部が割り当てる';
+
+-- 既存会員の権限を、現在のプランの保有モデルから引き継ぐ（初期値の整合）
+update portal.members m
+   set grant_semi = coalesce(p.has_semi, true),
+       grant_auto = coalesce(p.has_auto, false)
+  from portal.plans p
+ where m.plan_id = p.id;
+
+-- ---------------------------------------------------------------------
+-- 2) 全加盟店のオンボーディング状態を一括同期（規約の新版公開時などに使用）
+--    既存の portal.sync_onboarding_status(member) を全会員に対して回す。
+-- ---------------------------------------------------------------------
+create or replace function portal.sync_all_onboarding_status()
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  r record;
+begin
+  for r in select id from portal.members loop
+    perform portal.sync_onboarding_status(r.id);
+  end loop;
+end;
+$$;
+
+-- public ラッパー（RPC 用）
+create or replace function public.portal_sync_all_onboarding_status()
+returns void language sql security definer set search_path = public, portal as $$
+  select portal.sync_all_onboarding_status();
+$$;
+
+grant execute on function public.portal_sync_all_onboarding_status() to authenticated, service_role;
+
+
+-- #####################################################################
+-- ## 031_effective_flow_grants.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — effective_flow を「会員ごとの運用権限」ベースに統一
+-- =====================================================================
+-- 背景（レビュー④の続き）:
+--   migration 030 で運用方式（セミオート/フルオート）を members.grant_semi / grant_auto に
+--   移したが、SQL 側のヘルパー portal.effective_flow()（migration 019）は
+--   plans.has_semi / has_auto を参照したままだった。
+--   その結果「アプリの表示は権限ベース／DBの同期処理はプランベース」と真実が二重化し、
+--   実践マニュアルの修了判定（sync_onboarding_status）が実際の権限と食い違う。
+--
+--   本migrationで effective_flow を grants ベースに統一する。
+--   ロジックは lib/portal/flow.ts の resolveFlow と同一：
+--     active_flow が権限と整合すれば尊重 → 両方保有なら auto → auto のみ auto →
+--     semi のみ semi → 権限なしは semi（安全側）
+--
+--   これにより sync_onboarding_status のマニュアル判定も権限ベースになり、
+--   本部画面の表示と DB の判定が一致する。
+-- =====================================================================
+
+create or replace function portal.effective_flow(p_member_id uuid)
+returns text language plpgsql stable security definer set search_path = portal as $$
+declare
+  v_active   text;
+  v_has_semi boolean;
+  v_has_auto boolean;
+begin
+  -- ④ プランではなく、会員ごとに割り当てた運用権限を参照する
+  select m.active_flow, coalesce(m.grant_semi, false), coalesce(m.grant_auto, false)
+    into v_active, v_has_semi, v_has_auto
+    from portal.members m
+   where m.id = p_member_id;
+
+  -- 明示設定が保有権限と整合していれば尊重
+  if v_active = 'auto' and v_has_auto then return 'auto'; end if;
+  if v_active = 'semi' and v_has_semi then return 'semi'; end if;
+  -- 既定導出
+  if v_has_auto then return 'auto'; end if;
+  if v_has_semi then return 'semi'; end if;
+  return 'semi';
+end;
+$$;
+
+
+-- #####################################################################
+-- ## 032_manual_common_flow.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 実践マニュアルの共通化（フルオートのオンボーディング解放）
+-- =====================================================================
+-- 背景（レビュー⑤の検証で発覚）:
+--   公開中の実践マニュアルが「半自動(semi)専用」8件のみで、自動売買(auto)用が0件だった。
+--   sync_onboarding_status は「該当フローの公開マニュアルが0件なら未修了」と判定するため、
+--   フルオート権限の加盟店はマニュアルを修了できず、オンボーディングが永久に完了しない
+--   （＝仕入れオーダーも解放されない）状態だった。
+--
+--   対処：内容的に両フロー共通の項目を flow='both' にして、両方の加盟店に出す。
+--   ただし「仕入れ基準」「出品ルール」は、加盟者自身が仕入れ判断・出品を行う半自動固有の
+--   内容であり、フルオート（本部が仕入れ〜販売を主導）には当てはまらないため semi のまま残す。
+--   ＝要件定義書「絶対にずらしてはいけない商品差分」を維持する。
+--
+--   本部は管理画面（/admin/manual）から各項目のフローをいつでも変更でき、
+--   自動売買専用のマニュアルを別途追加することもできる。
+-- 冪等（タイトル一致で何度実行しても同じ結果）。
+-- =====================================================================
+
+update portal.manual_sections
+   set flow = 'both'
+ where flow = 'semi'
+   and title in (
+     '中古車市場の基礎',
+     '相場の見方',
+     'AI壁打ちで候補整理',
+     '禁止事項・注意事項',
+     '理解度チェック',
+     '修了'
+   );
+
+
+-- #####################################################################
+-- ## 033_task_admin_override.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 自動判定タスクの本部による強制完了（テスト・例外運用）
+-- =====================================================================
+-- クライアントレビュー⑪-①（2026-07-15）:
+--   「自動判定のタスクは本部管理画面からステータス変更ができない。
+--     そのため途中のステップをスキップできず、自動売買・半自動売買のオンボーディング
+--     フローを最後まで検証できない。自動判定タスクも管理者側から強制的に完了へ
+--     変更できるようにしてほしい（テスト用でも可）」
+--
+--   これまで link_key 付きタスク（本人確認/資金/規約/マニュアル/契約/完了確認）は
+--   実体だけが真実で、sync が常に上書きしていた（＝加盟店もボタンで飛ばせない）。
+--   この方針は維持しつつ、本部が明示的に「上書き」した場合に限り sync の対象外にする。
+--
+--   admin_override = true のタスクは sync が触らない（本部が設定した状態を保持）。
+--   本部が「自動判定に戻す」と false に戻り、次の sync で実体に再同期される。
+--
+--   ※ 加盟店側から上書きする手段は設けない（飛ばせない方針は維持）。
+-- 冪等（if not exists / create or replace）。
+-- =====================================================================
+
+alter table portal.onboarding_tasks
+  add column if not exists admin_override boolean not null default false;
+
+comment on column portal.onboarding_tasks.admin_override is
+  '本部が自動判定を上書きした（sync の対象外にする）。テスト・例外運用向け';
+
+-- ---------------------------------------------------------------------
+-- sync_onboarding_status：admin_override のタスクを除外して同期する
+--   （ロジックは migration 020 と同一。除外条件のみ追加）
+-- ---------------------------------------------------------------------
+create or replace function portal.sync_onboarding_status(p_member_id uuid)
+returns void language plpgsql security definer set search_path = portal as $$
+declare
+  v_identity_ok  boolean;
+  v_antique_ok   boolean;
+  v_funding_ok   boolean;
+  v_terms_ok     boolean;
+  v_manual_ok    boolean;
+  v_contract_ok  boolean;
+  v_completion_ok boolean;
+  v_flow         text;
+  v_flows        text[];
+begin
+  v_flow := portal.effective_flow(p_member_id);
+  v_flows := case when v_flow = 'auto' then array['auto','both'] else array['semi','both'] end;
+
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'identity' and status = 'approved'
+  ) into v_identity_ok;
+
+  select exists (
+    select 1 from portal.evidences
+     where member_id = p_member_id and kind = 'antique_license' and status = 'approved'
+  ) into v_antique_ok;
+
+  select exists (
+    select 1 from portal.funding_applications
+     where member_id = p_member_id and status = 'completed'
+  ) into v_funding_ok;
+
+  select exists (
+    select 1
+      from portal.agreements a
+      join portal.agreement_consents c on c.agreement_id = a.id
+     where a.published = true and c.member_id = p_member_id
+  ) into v_terms_ok;
+
+  select (
+    (select count(*) from portal.manual_sections where published = true and flow = any(v_flows)) > 0
+    and not exists (
+      select 1 from portal.manual_sections s
+       where s.published = true and s.flow = any(v_flows)
+         and not exists (
+           select 1 from portal.manual_progress p
+            where p.section_id = s.id and p.member_id = p_member_id
+         )
+    )
+  ) into v_manual_ok;
+
+  -- 契約締結：契約日が入っていれば自動 done
+  select exists (
+    select 1 from portal.members where id = p_member_id and contract_date is not null
+  ) into v_contract_ok;
+
+  -- 第1段：link_key タスク（completion 以外）を実体に合わせる
+  --   ただし本部が上書きしたタスク（admin_override）は触らない
+  update portal.onboarding_tasks t
+     set status = case when v_ok then 'done' else 'todo' end,
+         completed_at = case when v_ok then coalesce(t.completed_at, now()) else null end
+    from (values
+      ('identity',        v_identity_ok),
+      ('antique_license', v_antique_ok),
+      ('funding',         v_funding_ok),
+      ('terms',           v_terms_ok),
+      ('manual',          v_manual_ok),
+      ('contract',        v_contract_ok)
+    ) as m(k, v_ok)
+   where t.member_id = p_member_id
+     and t.link_key = m.k
+     and t.admin_override = false
+     and t.status <> (case when v_ok then 'done' else 'todo' end);
+
+  -- 全項目完了の確認：completion 以外の「必須(optional以外)」タスクが全 done か
+  --   （上書きで done にしたタスクもここでは done として扱われる＝検証を最後まで通せる）
+  select not exists (
+    select 1 from portal.onboarding_tasks
+     where member_id = p_member_id
+       and optional = false
+       and coalesce(link_key, '') <> 'completion'
+       and status <> 'done'
+  ) into v_completion_ok;
+
+  -- 第2段：completion を反映（completion 自体が上書きされていれば触らない）
+  update portal.onboarding_tasks t
+     set status = case when v_completion_ok then 'done' else 'todo' end,
+         completed_at = case when v_completion_ok then coalesce(t.completed_at, now()) else null end
+   where t.member_id = p_member_id
+     and t.link_key = 'completion'
+     and t.admin_override = false
+     and t.status <> (case when v_completion_ok then 'done' else 'todo' end);
+end;
+$$;
+
+
+-- #####################################################################
+-- ## 034_trading_override.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — オンボーディング未完了でも取引を許可する手動付与（特例）
+-- =====================================================================
+-- クライアントレビュー⑬-㉕（2026-07-15）:
+--   「オンボーディング未完了があっても手動で権限付与をできる仕様へお願いいたします」
+--
+--   これまで仕入れオーダー（取引）は「オンボーディングが全て完了」してから解放される
+--   自動制御だった（要件 5.3 ロック制御）。原則は維持しつつ、本部が個別に判断して
+--   先に取引を許可できる例外を設ける。
+--
+--     trading_override = true → オンボーディング未完了でも仕入れオーダーを許可する
+--
+--   ※ 古物商許可の猶予超過によるロックは対象外（法令順守のため解除しない）。
+--     こちらを解除したい場合は古物商許可証を提出・承認する運用を維持する。
+--   ※ 加盟店側から設定する手段は設けない（本部のみ）。
+-- 冪等（if not exists）。
+-- =====================================================================
+
+alter table portal.members
+  add column if not exists trading_override boolean not null default false;
+
+comment on column portal.members.trading_override is
+  'オンボーディング未完了でも仕入れオーダーを許可する（本部が手動で付与する特例）。古物商猶予のロックは解除しない';
+
+
+-- #####################################################################
 -- ## 仕上げ: PostgREST スキーマキャッシュを再読込
 -- #####################################################################
 notify pgrst, 'reload schema';

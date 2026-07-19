@@ -70,8 +70,14 @@ export type MemberRow = {
   plan_id: string | null
   contract_date: string | null
   status: MemberStatus
-  /** 実行中フロー（semi/auto）。null=プランの保有モデルから既定導出（レビュー⑳） */
+  /** 実行中フロー（semi/auto）。null=保有権限から既定導出（レビュー⑳） */
   active_flow: FlowType | null
+  /** セミオート（半自動売買）の利用権限。プランとは独立して本部が割当（レビュー④） */
+  grant_semi: boolean
+  /** フルオート（自動売買）の利用権限。プランとは独立して本部が割当（レビュー④） */
+  grant_auto: boolean
+  /** オンボーディング未完了でも取引を許可する特例（本部の手動付与・レビュー㉕） */
+  trading_override: boolean
   joining_fee_yen: number | null
   monthly_fee_yen: number | null
   working_capital_yen: number | null
@@ -99,6 +105,9 @@ export type MemberInsert = {
   contract_date?: string | null
   status?: MemberStatus
   active_flow?: FlowType | null
+  grant_semi?: boolean
+  grant_auto?: boolean
+  trading_override?: boolean
   joining_fee_yen?: number | null
   monthly_fee_yen?: number | null
   working_capital_yen?: number | null
@@ -460,6 +469,8 @@ export type OnboardingTaskRow = {
   link_key: string | null
   /** ゲート対象外（古物商など・未提出でも先へ進める） */
   optional: boolean
+  /** 本部が自動判定を上書きした（sync の対象外／テスト・例外運用・レビュー⑪） */
+  admin_override: boolean
   sort_order: number
   due_date: string | null
   completed_at: string | null

@@ -120,8 +120,11 @@ export default function EvidenceUploader({
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,application/pdf"
+          accept="image/*,application/pdf,.pdf,.heic,.heif"
           className="hidden"
+          // 親のクリックで開く実装のため、input 自身のクリックが親へ伝播すると
+          // 再度 click() が呼ばれてダイアログが開き直る。伝播を止める。
+          onClick={(e) => e.stopPropagation()}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) submit(f); e.target.value = '' }}
         />
       </div>

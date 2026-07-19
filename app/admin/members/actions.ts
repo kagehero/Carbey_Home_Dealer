@@ -27,9 +27,16 @@ export async function createMemberAction(formData: FormData) {
   const contract_date = str(formData.get('contract_date'))
   if (status === 'active' && !contract_date) redirect('/admin/members/new?error=contract_date_required')
 
-  // ㉛ active にするならプラン必須（未設定を許さない。半自動/自動/両方はプランで表現）
+  // ㉛ active にするなら契約プラン必須（未設定を許さない）
   const plan_id = str(formData.get('plan_id'))
   if (status === 'active' && !plan_id) redirect('/admin/members/new?error=plan_required')
+
+  // ④ 運用方式の権限はプランと独立。active にするなら最低1つ必要（何も使えない状態を防ぐ）
+  const grant_semi = formData.get('grant_semi') === 'on'
+  const grant_auto = formData.get('grant_auto') === 'on'
+  if (status === 'active' && !grant_semi && !grant_auto) redirect('/admin/members/new?error=grant_required')
+  // ㉕ オンボーディング未完了でも取引を許可する特例（本部の手動付与）
+  const trading_override = formData.get('trading_override') === 'on'
 
   // メール重複防止（1メール=1会員。ログイン発行時の衝突を未然に防ぐ）
   const email = str(formData.get('email'))
@@ -48,6 +55,9 @@ export async function createMemberAction(formData: FormData) {
     plan_id,
     contract_date,
     status,
+    grant_semi,
+    grant_auto,
+    trading_override,
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),
     working_capital_yen: num(formData.get('working_capital_yen')),
@@ -92,6 +102,13 @@ export async function updateMemberAction(formData: FormData) {
     if (!plan_id && !current?.plan_id) redirect(`/admin/members/${id}?error=plan_required`) // ㉛
   }
 
+  // ④ 運用方式の権限（プランと独立）。active にするなら最低1つ必要。
+  const grant_semi = formData.get('grant_semi') === 'on'
+  const grant_auto = formData.get('grant_auto') === 'on'
+  if (status === 'active' && !grant_semi && !grant_auto) redirect(`/admin/members/${id}?error=grant_required`)
+  // ㉕ オンボーディング未完了でも取引を許可する特例（本部の手動付与）
+  const trading_override = formData.get('trading_override') === 'on'
+
   // メール重複防止（自分自身は除外）。他会員が同じメールを使っていれば拒否。
   const email = str(formData.get('email'))
   if (email && (await findMemberByEmail(email, id))) redirect(`/admin/members/${id}?error=email_duplicate`)
@@ -109,6 +126,9 @@ export async function updateMemberAction(formData: FormData) {
     plan_id,
     contract_date,
     status,
+    grant_semi,
+    grant_auto,
+    trading_override,
     payment_status: (str(formData.get('payment_status')) ?? undefined) as PaymentStatus | undefined,
     joining_fee_yen: num(formData.get('joining_fee_yen')),
     monthly_fee_yen: num(formData.get('monthly_fee_yen')),

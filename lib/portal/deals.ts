@@ -39,6 +39,41 @@ export async function createDealFromOrder(order: OrderRow): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+/**
+ * オーダーID → 案件（進捗）の対応表。本部オーダー管理で各オーダーの進捗を可視化するのに使う。
+ * 1オーダー＝1案件の想定だが、万一複数あれば最新（created_at 降順の先頭）を採用する。
+ */
+export async function mapDealsByOrderId(orderIds: string[]): Promise<Map<string, VehicleDealRow>> {
+  const map = new Map<string, VehicleDealRow>()
+  if (orderIds.length === 0) return map
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase
+    .from('vehicle_deals')
+    .select('*')
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  for (const d of (data ?? []) as unknown as VehicleDealRow[]) {
+    if (d.order_id && !map.has(d.order_id)) map.set(d.order_id, d)
+  }
+  return map
+}
+
+/** 本部用：全加盟店の案件をステージ別に集計（オーダー管理の一元管理ヘッダー）。 */
+export async function getAdminDealSummary(): Promise<DealBoardSummary> {
+  const supabase = createServiceRoleClient()
+  const { data } = await supabase.from('vehicle_deals').select('status')
+  const rows = (data ?? []) as { status: DealStatusStage }[]
+  const s = { sourcing: 0, prepping: 0, delivered: 0, active: 0 }
+  for (const r of rows) {
+    if (r.status === 'sourcing') s.sourcing++
+    else if (r.status === 'prepping') s.prepping++
+    else if (r.status === 'delivered') s.delivered++
+  }
+  s.active = s.sourcing + s.prepping
+  return s
+}
+
 /** 加盟店の「進行中」案件（delivered 以外）を新しい順に取得。 */
 export async function listActiveDeals(memberId: string): Promise<VehicleDealRow[]> {
   const supabase = createServiceRoleClient()

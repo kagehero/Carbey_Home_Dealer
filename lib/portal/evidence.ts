@@ -3,6 +3,36 @@ import type { EvidenceRow, EvidenceKind, EvidenceDocType, EvidenceStatus } from 
 
 const BUCKET = 'member-evidences'
 
+/** 拡張子 → MIME。ブラウザが種別を返さない場合の補完に使う（レビュー⑨）。 */
+const EXT_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  heic: 'image/heic', heif: 'image/heif', gif: 'image/gif', bmp: 'image/bmp',
+  tif: 'image/tiff', tiff: 'image/tiff', avif: 'image/avif', pdf: 'application/pdf',
+}
+
+/** 保存に使う MIME を決める。空なら拡張子から補完し、それでも不明なら汎用バイナリ。 */
+function resolveContentType(name: string, type: string): string {
+  if (type) return type
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_MIME[ext] ?? 'application/octet-stream'
+}
+
+/** 承認待ちエビデンス（本部の承認一覧・レビュー⑪-②）。加盟店名つき・古い順（待たせている順）。 */
+export type PendingEvidence = EvidenceRow & {
+  member: { id: string; member_name: string; company_name: string | null } | null
+}
+
+export async function listPendingEvidences(): Promise<PendingEvidence[]> {
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase
+    .from('evidences')
+    .select('*, member:members(id, member_name, company_name)')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as unknown as PendingEvidence[]
+}
+
 /** 加盟店の全エビデンス（本部・本人）。 */
 export async function listEvidences(memberId: string): Promise<EvidenceRow[]> {
   const supabase = createServiceRoleClient()
@@ -38,10 +68,12 @@ export async function uploadEvidence(
 
   const safeName = input.file.name.replace(/[^\w.\-一-龠ぁ-んァ-ヶ]/g, '_')
   const path = `${member.id}/${input.kind}/${Date.now()}_${safeName}`
+  // ブラウザが種別を返さない（iPhone の HEIC など）場合は拡張子から補完する
+  const contentType = resolveContentType(input.file.name, input.file.type)
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
-    .upload(path, input.file.buffer, { contentType: input.file.type, upsert: false })
-  if (upErr) throw new Error(upErr.message)
+    .upload(path, input.file.buffer, { contentType, upsert: false })
+  if (upErr) throw new Error(`ファイルの保存に失敗しました：${upErr.message}`)
 
   const { data, error } = await supabase
     .from('evidences')
@@ -51,7 +83,7 @@ export async function uploadEvidence(
       doc_type: input.docType,
       storage_path: path,
       file_name: input.file.name,
-      file_type: input.file.type,
+      file_type: contentType,
       file_size: input.file.size,
     } as never)
     .select('*')

@@ -195,7 +195,10 @@ export default function ChatThread({
   }
 
   return (
-    <div className="flex h-[calc(100vh-13rem)] flex-col rounded-2xl border border-slate-200 bg-white shadow-card">
+    // 白カードなので基準の文字色をここで固定する。
+    // 加盟店ポータルはダークテーマ（layout が text-slate-200 を敷く）ため、
+    // 指定しないと白背景に白文字が継承されて読めなくなる（レビュー⑦）。
+    <div className="flex h-[calc(100vh-13rem)] flex-col rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-card">
       {/* ヘッダー：検索トグル */}
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
         <SearchBar open={searchOpen} onToggle={() => setSearchOpen((v) => !v)} conversationId={conversationId} />
@@ -262,7 +265,7 @@ export default function ChatThread({
           onChange={(e) => { setText(e.target.value); notifyTyping() }}
           rows={1}
           placeholder="メッセージを入力..."
-          className="max-h-32 flex-1 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          className="max-h-32 flex-1 resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSubmit() }
           }}
@@ -430,7 +433,7 @@ function SearchBar({ open, onToggle, conversationId }: { open: boolean; onToggle
           <input
             value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void run() }}
             placeholder="キーワード..." autoFocus
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-brand-400 focus:outline-none"
+            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none"
           />
           <button onClick={run} className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600">検索</button>
           {results && (
@@ -459,7 +462,7 @@ function EditModal({ value, onChange, onSave, onClose }: { value: string; onChan
         <h3 className="mb-3 text-sm font-semibold text-slate-900">メッセージを編集</h3>
         <textarea
           value={value} onChange={(e) => onChange(e.target.value)} rows={4} autoFocus
-          className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
         />
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">キャンセル</button>

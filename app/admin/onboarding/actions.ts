@@ -3,10 +3,21 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireFeature } from '@/lib/auth/session'
-import { updateTaskStatus, ensureOnboardingTasks, sendProgressReminder } from '@/lib/portal/onboarding'
+import { updateTaskStatus, clearTaskOverride, ensureOnboardingTasks, sendProgressReminder } from '@/lib/portal/onboarding'
 import type { OnboardingTaskStatus } from '@/types/database'
 
 const STATUSES: OnboardingTaskStatus[] = ['todo', 'in_progress', 'done']
+
+/** 自動判定タスクの上書きを解除して実体に再同期する（本部・レビュー⑪-①）。 */
+export async function clearTaskOverrideAction(formData: FormData) {
+  await requireFeature('members')
+  const taskId = String(formData.get('task_id') ?? '')
+  const memberId = String(formData.get('member_id') ?? '')
+  if (!taskId || !memberId) redirect('/admin/onboarding')
+  await clearTaskOverride(taskId, memberId)
+  revalidatePath(`/admin/onboarding/${memberId}`)
+  redirect(`/admin/onboarding/${memberId}`)
+}
 
 /** タスクの状態を変更する（本部）。 */
 export async function setTaskStatusAction(formData: FormData) {

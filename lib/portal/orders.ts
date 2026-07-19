@@ -18,6 +18,20 @@ export type OrderWithMember = OrderRow & {
   member: { id: string; member_name: string; company_name: string | null } | null
 }
 
+/**
+ * ㉕ 本部が「オンボーディング未完了でも取引を許可」した加盟店か。
+ * 古物商猶予の超過ロックはこの特例では解除されない（assertTradingAllowed 側で判定）。
+ */
+export async function hasTradingOverride(userId: string): Promise<boolean> {
+  const supabase = createServiceRoleClient()
+  const { data } = await supabase
+    .from('members')
+    .select('trading_override')
+    .eq('user_id', userId)
+    .maybeSingle<{ trading_override: boolean }>()
+  return !!data?.trading_override
+}
+
 /** 全オーダー（本部）。加盟店名を結合。status / memberId で絞り込み可。 */
 export async function listOrders(filter?: { status?: OrderStatus; memberId?: string }): Promise<OrderWithMember[]> {
   const supabase = createServiceRoleClient()
@@ -85,7 +99,8 @@ export async function createOwnOrder(
 ): Promise<OrderRow> {
   // ㉚ オンボーディング完了ゲート（要件定義書 論点B：未完了はオーダー不可）
   // ㉜ STEP5：前回は解放して確認済み。現在は要件どおり有効（ORDER_ONBOARDING_GATE=true）。
-  if (ORDER_ONBOARDING_GATE) {
+  // ㉕ 本部が特例で許可（trading_override）していれば未完了でもオーダー可。
+  if (ORDER_ONBOARDING_GATE && !(await hasTradingOverride(userId))) {
     const onboarding = await getOwnOnboarding(userId)
     if (!onboarding?.unlocked) {
       throw new Error('オンボーディングが完了していません。すべてのステップを完了すると仕入れオーダーを作成できます。')

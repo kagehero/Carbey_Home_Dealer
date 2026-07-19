@@ -38,7 +38,12 @@ export default async function NewMemberPage({
       )}
       {sp.error === 'plan_required' && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          契約ステータスを「稼働中（active）」にするには契約プランの選択が必須です（半自動／自動／両方のいずれか）。
+          契約ステータスを「稼働中（active）」にするには契約プランの選択が必須です。
+        </div>
+      )}
+      {sp.error === 'grant_required' && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          契約ステータスを「稼働中（active）」にするには、運用方式の権限（セミオート／フルオート／両方）を1つ以上割り当ててください。
         </div>
       )}
 

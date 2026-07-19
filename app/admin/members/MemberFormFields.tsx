@@ -108,6 +108,51 @@ export default function MemberFormFields({
         </div>
       </section>
 
+      {/* ④ 運用方式の権限：プランのプルダウンとは独立した別設定。
+             セミオート／フルオート／両方 の3パターンを割り当てる。 */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="mb-1 text-sm font-semibold text-slate-900">運用方式の権限</h2>
+        <p className="mb-4 text-xs text-slate-500">
+          セミオートとフルオートは運用方式が異なるため、プランとは別に割り当てます。
+          両方を割り当てると、加盟店は両方を利用でき、フローの切り替えも可能になります。
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+            <input type="checkbox" name="grant_semi" defaultChecked={member ? member.grant_semi : true}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
+            <span>
+              <span className="block text-sm font-medium text-slate-800">セミオート（半自動売買）</span>
+              <span className="block text-xs text-slate-500">加盟者が仕入れオーダーを送り、自身で販売する運用</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+            <input type="checkbox" name="grant_auto" defaultChecked={member ? member.grant_auto : false}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
+            <span>
+              <span className="block text-sm font-medium text-slate-800">フルオート（自動売買）</span>
+              <span className="block text-xs text-slate-500">本部主導で仕入れ〜販売まで運用</span>
+            </span>
+          </label>
+        </div>
+
+        {/* ㉕ オンボーディング未完了でも取引を許可する特例（本部の手動付与） */}
+        <label className="mt-3 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+          <input type="checkbox" name="trading_override" defaultChecked={member ? member.trading_override : false}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400" />
+          <span>
+            <span className="block text-sm font-medium text-slate-800">
+              オンボーディング未完了でも仕入れオーダーを許可する（特例）
+            </span>
+            <span className="block text-xs text-slate-600">
+              通常はオンボーディングを全て完了すると自動で解放されます。本部の判断で先に取引を開始させたい場合のみ有効にしてください。
+            </span>
+            <span className="mt-1 block text-xs text-amber-700">
+              ※ 古物商許可の猶予を超過している場合は、この特例でも取引は再開されません（許可証の提出・承認が必要です）。
+            </span>
+          </span>
+        </label>
+      </section>
+
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-4 text-sm font-semibold text-slate-900">財務情報</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
