@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireFeature } from '@/lib/auth/session'
-import { createManualDeal, moveToPrepping, moveToListing, recordSale, settleAndDeliver, setDealDestination, DEFAULT_FROM_PREF } from '@/lib/portal/deals'
+import { createManualDeal, moveToPrepping, moveToListing, recordSale, settleAndDeliver, cancelSettlement, setDealDestination, DEFAULT_FROM_PREF } from '@/lib/portal/deals'
 import { addDealCost, updateDealCost, deleteDealCost, uploadDealEvidence } from '@/lib/portal/deal-costs'
 import { isPrefecture } from '@/lib/portal/prefectures'
 import type { DealCostKind } from '@/types/database'
@@ -159,4 +159,23 @@ export async function settleDealAction(formData: FormData): Promise<void> {
   }
   revalidateDeal(dealId)
   redirect(`/admin/vehicles/${dealId}?settled=1`)
+}
+
+/**
+ * 精算を取り消して訂正できる状態に戻す（本部・レビュー①）。
+ * 預かり金を精算前に戻し、費目を再編集できるようにする。
+ */
+export async function cancelSettlementAction(formData: FormData): Promise<void> {
+  const session = await requireFeature('reports')
+  const dealId = String(formData.get('deal_id') ?? '')
+  if (!dealId) return
+  try {
+    await cancelSettlement(dealId, session.userId, true)
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e
+    const msg = e instanceof Error ? e.message : '取消に失敗しました'
+    redirect(`/admin/vehicles/${dealId}?error=${encodeURIComponent(msg)}`)
+  }
+  revalidateDeal(dealId)
+  redirect(`/admin/vehicles/${dealId}?cancelled=1`)
 }

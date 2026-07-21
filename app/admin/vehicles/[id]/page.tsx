@@ -9,7 +9,7 @@ import { PREFECTURES } from '@/lib/portal/prefectures'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { yen } from '@/lib/portal/labels'
 import AdminDealCostEditor from '@/components/admin/AdminDealCostEditor'
-import { dealToPreppingAction, dealToListingAction, recordSaleAction, settleDealAction, setDestinationAction } from '../actions'
+import { dealToPreppingAction, dealToListingAction, recordSaleAction, settleDealAction, setDestinationAction, cancelSettlementAction } from '../actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,7 @@ export default async function AdminDealDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string; settled?: string }>
+  searchParams: Promise<{ error?: string; settled?: string; cancelled?: string }>
 }) {
   await requireFeature('reports')
   const { id } = await params
@@ -46,8 +46,13 @@ export default async function AdminDealDetailPage({
           <CheckCircle2 className="h-4 w-4" /> 精算しました。諸費用を預かり金から差し引き、残金を繰り越しました。
         </div>
       )}
+      {sp.cancelled && (
+        <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <CheckCircle2 className="h-4 w-4" /> 精算を取り消しました。預かり金を元に戻し、費用を訂正できる状態にしました。
+        </div>
+      )}
       {sp.error && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">精算できませんでした：{sp.error}</div>
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">処理できませんでした：{sp.error}</div>
       )}
 
       <div>
@@ -142,6 +147,17 @@ export default async function AdminDealDetailPage({
               ? '※ 精算済みです。諸費用は預かり金から差し引かれ、残金は次回の仕入れ資金に繰り越されています。'
               : '※「費用を確定して精算」で、諸費用（代行手数料含む）を預かり金から自動で差し引き、残金を繰り越します。'}
           </p>
+
+          {/* ① 精算の取消・訂正（売却前のみ）。預かり金を元に戻し、費用を修正できる状態に戻す。 */}
+          {deal.settled && deal.status !== 'sold' && (
+            <form action={cancelSettlementAction} className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
+              <input type="hidden" name="deal_id" value={deal.id} />
+              <button className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50">
+                精算を取り消して訂正する
+              </button>
+              <span className="text-[11px] text-slate-400">預かり金を精算前に戻し、費用を再編集できます。</span>
+            </form>
+          )}
         </CardBody>
       </Card>
 

@@ -401,6 +401,40 @@ export async function recordSale(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * 精算を取り消して訂正できる状態に戻す（本部・レビュー 2026-07-21 ①）。
+ *   1. この案件の精算記帳（settlement）を削除 → 預かり金残高が自動で元に戻る
+ *   2. 案件を精算前（商品化中）に戻し、settled/精算額/残金をクリア
+ *   → 費目が再び編集可能になり、修正して再精算できる。
+ * 売却済みの案件は取り消せない（先に販売実績の取消が必要）。
+ */
+export async function cancelSettlement(dealId: string, userId: string, isStaff: boolean): Promise<void> {
+  const supabase = createServiceRoleClient()
+  const deal = await getDeal(dealId)
+  if (!deal) throw new Error('案件が見つかりません')
+  if (!isStaff && deal.member_id !== (await resolveMemberId(userId))) throw new Error('権限がありません')
+  if (!deal.settled) throw new Error('この案件はまだ精算されていません。')
+  if (deal.status === 'sold') throw new Error('売却済みの案件は取り消せません。先に販売実績の登録を取り消してください。')
+
+  // 1) 精算の記帳を削除（残高はトリガで自動再計算＝元に戻る）
+  const { data: entries } = await supabase
+    .from('ledger_entries')
+    .select('id')
+    .eq('deal_id', dealId)
+    .eq('kind', 'settlement')
+  for (const e of (entries ?? []) as { id: string }[]) {
+    const { error } = await supabase.from('ledger_entries').delete().eq('id', e.id)
+    if (error) throw new Error(error.message)
+  }
+
+  // 2) 案件を精算前（商品化中）へ戻す
+  const { error } = await supabase
+    .from('vehicle_deals')
+    .update({ status: 'prepping', settled: false, settled_amount_yen: null, remaining_yen: null, delivered_at: null } as never)
+    .eq('id', dealId)
+  if (error) throw new Error(error.message)
+}
+
 /** 旧名互換（精算なしの単純遷移）。既存呼び出し用に残す。 */
 export async function markDelivered(dealId: string, userId: string, isStaff: boolean): Promise<void> {
   // 既定の発地（拠点）は東京都とする。将来は本部設定から取得。
