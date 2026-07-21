@@ -23,6 +23,10 @@ export type PlanRow = {
   /** 自動売買モデルを保有するか（レビュー⑳） */
   has_auto: boolean
   monthly_fee_yen: number
+  /** 自動売買の初期枠数（⑦・migration 036）。economy=1, 上位=2, 半自動=0 */
+  default_auto_slots: number
+  /** 自動売買の月額管理手数料（⑦・migration 036）。上位プランで設定 */
+  mgmt_fee_monthly_yen: number
   joining_fee_yen: number
   display_order: number
   description: string | null
@@ -38,6 +42,8 @@ export type PlanInsert = {
   has_semi?: boolean
   has_auto?: boolean
   monthly_fee_yen?: number
+  default_auto_slots?: number
+  mgmt_fee_monthly_yen?: number
   joining_fee_yen?: number
   display_order?: number
   description?: string | null
@@ -78,6 +84,10 @@ export type MemberRow = {
   grant_auto: boolean
   /** オンボーディング未完了でも取引を許可する特例（本部の手動付与・レビュー㉕） */
   trading_override: boolean
+  /** 自動売買の保有枠数（⑦・migration 036）。最大10 */
+  auto_slots: number
+  /** 1枠あたり必要運用資金（⑦・migration 036）。既定400万・本部が加盟者ごと設定可 */
+  capital_per_slot_yen: number
   joining_fee_yen: number | null
   monthly_fee_yen: number | null
   working_capital_yen: number | null
@@ -108,6 +118,8 @@ export type MemberInsert = {
   grant_semi?: boolean
   grant_auto?: boolean
   trading_override?: boolean
+  auto_slots?: number
+  capital_per_slot_yen?: number
   joining_fee_yen?: number | null
   monthly_fee_yen?: number | null
   working_capital_yen?: number | null
@@ -144,6 +156,10 @@ export type InvoiceRow = {
   status: InvoiceStatus
   billed_at: string | null
   note: string | null
+  /** 枠購入の枠数（kind=slot_fee・⑦フェーズ5・migration 039） */
+  slot_count: number | null
+  /** 枠加算済みフラグ（二重加算防止・migration 039） */
+  slots_applied: boolean
   created_at: string
   updated_at: string
 }
@@ -354,7 +370,7 @@ export type EvidenceRow = {
 }
 
 // 半自動売買フェーズ1: 預かり金台帳（仕入れ資金）
-export type LedgerEntryKind = 'deposit' | 'withdraw' | 'settlement' | 'adjust'
+export type LedgerEntryKind = 'deposit' | 'withdraw' | 'settlement' | 'adjust' | 'mgmt_fee'
 
 export type MemberLedgerRow = {
   id: string
@@ -382,6 +398,8 @@ export type VehicleDealRow = {
   id: string
   member_id: string
   order_id: string | null
+  /** フロー種別（⑦・migration 037）。semi=半自動 / auto=自動売買（200台キャパ・枠の対象） */
+  flow: 'semi' | 'auto'
   status: DealStatusStage
   maker: string | null
   car_model: string | null
@@ -404,6 +422,9 @@ export type VehicleDealRow = {
   sold_by: string | null
   cost_total_yen: number | null
   gross_profit_yen: number | null // 自動算出（販売価格−費用合計）
+  // フェーズ6 月額管理手数料（自動売買・migration 040）
+  mgmt_fee_yen: number | null // 清算時に預かり金から差し引いた管理手数料。NULL=未課金
+  mgmt_fee_months: number | null // 算出に用いた満了月数
   created_at: string
   updated_at: string
 }
@@ -485,10 +506,44 @@ export type OnboardingTaskRow = {
   updated_at: string
 }
 
+// 全体設定（⑦・migration 036）
+export type SystemSettingRow = {
+  key: string
+  value_int: number | null
+  note: string | null
+  updated_at: string
+}
+
+// 自動売買の受注待ち（予約・⑦・migration 038）
+export type AutoReservationStatus = 'waiting' | 'assigned' | 'cancelled'
+export type AutoReservationRow = {
+  id: string
+  member_id: string
+  status: AutoReservationStatus
+  sort_order: number
+  requested_at: string
+  assigned_at: string | null
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** フェーズ7：両フロー保有者の預かり金振り分け（自動売買用／半自動用）。migration 041。 */
+export type MemberBudgetAllocRow = {
+  member_id: string
+  auto_allocated_yen: number
+  semi_allocated_yen: number
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   portal: {
     Tables: {
       plans: { Row: PlanRow; Insert: PlanInsert; Update: Partial<PlanInsert> }
+      system_settings: { Row: SystemSettingRow; Insert: Partial<SystemSettingRow>; Update: Partial<SystemSettingRow> }
+      auto_reservations: { Row: AutoReservationRow; Insert: Partial<AutoReservationRow>; Update: Partial<AutoReservationRow> }
+      member_budget_alloc: { Row: MemberBudgetAllocRow; Insert: Partial<MemberBudgetAllocRow>; Update: Partial<MemberBudgetAllocRow> }
       users: { Row: PortalUserRow; Insert: Partial<PortalUserRow>; Update: Partial<PortalUserRow> }
       members: { Row: MemberRow; Insert: MemberInsert; Update: Partial<MemberInsert> }
       payments: { Row: PaymentRow; Insert: Partial<PaymentRow>; Update: Partial<PaymentRow> }

@@ -2,13 +2,31 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireFeature } from '@/lib/auth/session'
-import { createInvoice, recordPayment, markBilled, cancelInvoice, deleteInvoice } from '@/lib/portal/billing'
+import { createInvoice, createSlotPurchaseInvoice, recordPayment, markBilled, cancelInvoice, deleteInvoice } from '@/lib/portal/billing'
+import { redirect } from 'next/navigation'
 import type { InvoiceKind } from '@/types/database'
 
 const KINDS: InvoiceKind[] = ['joining', 'system_fee', 'monthly', 'royalty', 'management_fee', 'slot_fee', 'sourcing_fund', 'other']
 
 function num(v: FormDataEntryValue | null): number {
   return Number(String(v ?? '').replace(/[^\d]/g, ''))
+}
+
+/** 本部が自動売買の枠購入を請求する（1枠=10万円）。消込完了で枠が自動加算される。 */
+export async function createSlotPurchaseAction(formData: FormData) {
+  await requireFeature('members')
+  const memberId = String(formData.get('member_id') ?? '')
+  const slotCount = num(formData.get('slot_count'))
+  if (!memberId || !slotCount) return
+  try {
+    await createSlotPurchaseInvoice({ memberId, slotCount })
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e
+    const msg = e instanceof Error ? e.message : '枠購入の請求に失敗しました'
+    redirect(`/admin/members/${memberId}?error=${encodeURIComponent(msg)}`)
+  }
+  revalidatePath(`/admin/members/${memberId}`)
+  redirect(`/admin/members/${memberId}`)
 }
 
 /** 本部が請求を作成する（請求予定 or 即請求）。 */

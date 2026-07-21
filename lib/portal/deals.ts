@@ -2,6 +2,7 @@ import { createServiceRoleClient } from '@/lib/supabase/admin'
 import { listDealCosts, addDealCost } from '@/lib/portal/deal-costs'
 import { getLedgerBalance, addLedgerEntry } from '@/lib/portal/ledger'
 import { quoteShipping } from '@/lib/portal/shipping'
+import { getMemberAutoCapacity } from '@/lib/portal/auto-trading'
 import type { VehicleDealRow, DealStatusStage, OrderRow } from '@/types/database'
 
 /**
@@ -25,12 +26,31 @@ export const DEAL_STAGE_LABEL: Record<DealStatusStage, string> = {
   sold: '売却済み',
 }
 
+/**
+ * 満了月数を数える（フェーズ6・月額管理手数料）。
+ * 開始日基準で満了した月数のみ（切下げ・端数月は0・最短0）。
+ * 例：3/15開始 → 4/14=0, 5/14=1, 5/15=2。
+ * 月末調整：終了日がその月の末日なら、開始日が末日より大きくても満了とみなす（1/31→2/28=1）。
+ */
+export function completedMonths(startISO: string, endISO: string): number {
+  const s = new Date(startISO)
+  const e = new Date(endISO)
+  if (!(e > s)) return 0
+  let months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth())
+  if (e.getUTCDate() < s.getUTCDate()) {
+    const lastDayOfEndMonth = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth() + 1, 0)).getUTCDate()
+    if (e.getUTCDate() !== lastDayOfEndMonth) months -= 1
+  }
+  return Math.max(0, months)
+}
+
 /** オーダーから案件を生成し「仕入れ中」に自動遷移（オーダー送信直後に呼ぶ）。 */
 export async function createDealFromOrder(order: OrderRow): Promise<void> {
   const supabase = createServiceRoleClient()
   const { error } = await supabase.from('vehicle_deals').insert({
     member_id: order.member_id,
     order_id: order.id,
+    flow: 'semi', // 加盟店オーダー由来＝半自動
     status: 'sourcing', // オーダー送信で仕入れ中に自動遷移
     maker: order.maker,
     car_model: order.car_model,
@@ -88,12 +108,20 @@ export async function createManualDeal(input: {
   carModel?: string | null
   year?: string | null
   orderAmountYen?: number | null
+  /** 受注可否チェックを行うか（既定 true）。フェーズ2：枠・キャパ・運用資金の判定。 */
+  enforceCapacity?: boolean
 }): Promise<VehicleDealRow> {
+  // ⑦ フェーズ2：受注可否（空き枠・全体キャパ・預かり金）を判定してブロック
+  if (input.enforceCapacity !== false) {
+    const cap = await getMemberAutoCapacity(input.memberId)
+    if (!cap.canAccept) throw new Error(cap.blockReason ?? '現在この加盟者の自動売買は受注できません。')
+  }
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase
     .from('vehicle_deals')
     .insert({
       member_id: input.memberId,
+      flow: 'auto', // 本部起票＝自動売買
       status: 'sourcing',
       maker: input.maker ?? null,
       car_model: input.carModel ?? null,
@@ -149,6 +177,27 @@ export async function listActiveDeals(memberId: string): Promise<VehicleDealRow[
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as VehicleDealRow[]
+}
+
+/** フェーズ8：加盟者の全自動（flow='auto'）案件を新しい順に取得（進捗フロー表示用）。 */
+export async function listMemberAutoDeals(memberId: string): Promise<VehicleDealRow[]> {
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase
+    .from('vehicle_deals')
+    .select('*')
+    .eq('member_id', memberId)
+    .eq('flow', 'auto')
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as unknown as VehicleDealRow[]
+}
+
+/** ユーザーIDから自分の全自動案件を取得。会員未紐付けは空配列。 */
+export async function listOwnAutoDeals(userId: string): Promise<VehicleDealRow[]> {
+  const supabase = createServiceRoleClient()
+  const { data: member } = await supabase.from('members').select('id').eq('user_id', userId).maybeSingle<{ id: string }>()
+  if (!member) return []
+  return listMemberAutoDeals(member.id)
 }
 
 export type DealBoardSummary = {
@@ -388,14 +437,45 @@ export async function recordSale(
       : (deal.order_amount_yen ?? 0)
   }
 
+  const soldAt = input.soldAt ?? new Date().toISOString()
+
+  // フェーズ6：自動売買（auto）の清算時に月額管理手数料を預かり金から差し引く。
+  //   手数料 = 満了月数（運用開始 sourcing_at 〜 清算 soldAt）× プランの mgmt_fee_monthly_yen。
+  //   端数月は0・最短0。deal.mgmt_fee_yen が未設定のときだけ課金（二重課金防止）。
+  let mgmtFeeYen: number | null = deal.mgmt_fee_yen ?? null
+  let mgmtFeeMonths: number | null = deal.mgmt_fee_months ?? null
+  if (deal.flow === 'auto' && deal.mgmt_fee_yen == null) {
+    const { data: mp } = await supabase
+      .from('members')
+      .select('plan:plans(mgmt_fee_monthly_yen)')
+      .eq('id', deal.member_id)
+      .maybeSingle<{ plan: { mgmt_fee_monthly_yen: number } | null }>()
+    const monthly = mp?.plan?.mgmt_fee_monthly_yen ?? 0
+    const months = deal.sourcing_at ? completedMonths(deal.sourcing_at, soldAt) : 0
+    mgmtFeeMonths = months
+    mgmtFeeYen = monthly * months
+    if (mgmtFeeYen > 0) {
+      await addLedgerEntry({
+        memberId: deal.member_id,
+        kind: 'mgmt_fee',
+        amount: mgmtFeeYen,
+        note: `月額管理手数料：${[deal.maker, deal.car_model].filter(Boolean).join(' ')}（${months}か月 × ${monthly.toLocaleString()}円）`,
+        dealId,
+        createdBy: isStaff ? userId : null,
+      })
+    }
+  }
+
   const { error } = await supabase
     .from('vehicle_deals')
     .update({
       status: 'sold',
       sale_price_yen: input.salePriceYen,
-      sold_at: input.soldAt ?? new Date().toISOString(),
+      sold_at: soldAt,
       sold_by: userId,
       cost_total_yen: costTotal,
+      mgmt_fee_yen: mgmtFeeYen,
+      mgmt_fee_months: mgmtFeeMonths,
     } as never)
     .eq('id', dealId)
   if (error) throw new Error(error.message)

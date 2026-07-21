@@ -3356,6 +3356,299 @@ create index if not exists idx_vehicle_deals_sold on portal.vehicle_deals(member
 
 
 -- #####################################################################
+-- ## 036_auto_slots_foundation.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 自動売買 枠・キャパ・受注管理 フェーズ1：データモデル基盤
+-- =====================================================================
+-- 確定業務ルール（クライアント 2026-07-21・docs/auto-trading-slots-design.md）:
+--   枠の初期値＝プラン既定：エコノミー1枠／ブロンズ・プラチナ・ゴールド2枠／半自動0。
+--   1枠=販売10万円、1加盟者 最大10枠、追加枠は手動。
+--   運用資金：預かり金<100万で受注ロック。1枠=運用資金400万（本部が加盟者ごと設定可）。
+--   200台上限は自動売買のみ（設定値で400等に拡張可）。
+--   月額管理手数料は上位プランでプラン設定に金額を持つ（将来変更前提）。
+-- 冪等（if not exists / on conflict）。
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) plans：プランごとの初期枠数・月額管理手数料
+-- ---------------------------------------------------------------------
+alter table portal.plans add column if not exists default_auto_slots   int not null default 0;   -- 初期枠数
+alter table portal.plans add column if not exists mgmt_fee_monthly_yen  int not null default 0;   -- 月額管理手数料（自動売買）
+
+comment on column portal.plans.default_auto_slots is '自動売買の初期枠数（加盟時に付与）。economy=1, bronze/platinum/gold=2, 半自動=0';
+comment on column portal.plans.mgmt_fee_monthly_yen is '自動売買の月額管理手数料。上位プランで設定（将来変更前提・本部が調整）';
+
+-- プラン既定枠を反映（金額は本部が後から設定）
+update portal.plans set default_auto_slots = 1 where code = 'economy';
+update portal.plans set default_auto_slots = 2 where code in ('bronze', 'platinum', 'gold');
+update portal.plans set default_auto_slots = 0 where code = 'home_dealer';
+
+-- ---------------------------------------------------------------------
+-- 2) members：保有枠数・1枠あたり必要運用資金
+-- ---------------------------------------------------------------------
+alter table portal.members add column if not exists auto_slots           int not null default 0;         -- 保有枠数（最大10）
+alter table portal.members add column if not exists capital_per_slot_yen int not null default 4000000;   -- 1枠あたり必要運用資金
+
+comment on column portal.members.auto_slots is '自動売買の保有枠数（プラン既定＋購入＋本部調整）。最大10。本部都合の操作は加盟者に非可視化';
+comment on column portal.members.capital_per_slot_yen is '1枠あたり必要運用資金（既定400万・本部が加盟者ごとに設定可）';
+
+-- 既存加盟者へプラン既定枠を反映（自動売買権限の有無に関わらずプラン既定を入れておく）
+update portal.members m
+   set auto_slots = coalesce(p.default_auto_slots, 0)
+  from portal.plans p
+ where m.plan_id = p.id
+   and m.auto_slots = 0;
+
+-- ---------------------------------------------------------------------
+-- 3) system_settings：全体設定（本部が調整。キャパ拡張・受注ロック閾値）
+-- ---------------------------------------------------------------------
+create table if not exists portal.system_settings (
+  key         text primary key,
+  value_int   int,
+  note        text,
+  updated_at  timestamptz not null default now()
+);
+
+drop trigger if exists trg_system_settings_touch on portal.system_settings;
+create trigger trg_system_settings_touch
+  before update on portal.system_settings
+  for each row execute function portal.touch_updated_at();
+
+insert into portal.system_settings (key, value_int, note) values
+  ('auto_capacity_total', 200, '自動売買の同時運用車両の全体上限（インフラ上限。400等に拡張可）'),
+  ('auto_min_deposit',    1000000, '自動売買の受注に必要な最低預かり金。これ未満は受注ロック')
+on conflict (key) do nothing;
+
+-- ---------------------------------------------------------------------
+-- RLS：system_settings は閲覧＝ログインユーザー全員（加盟店のキャパ表示用）、編集＝本部
+-- ---------------------------------------------------------------------
+alter table portal.system_settings enable row level security;
+
+drop policy if exists portal_system_settings_read on portal.system_settings;
+create policy portal_system_settings_read on portal.system_settings
+  for select using (auth.uid() is not null);
+
+drop policy if exists portal_system_settings_write on portal.system_settings;
+create policy portal_system_settings_write on portal.system_settings
+  for all using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+grant select on portal.system_settings to authenticated;
+grant insert, update, delete on portal.system_settings to authenticated;
+grant all on portal.system_settings to service_role;
+
+
+-- #####################################################################
+-- ## 037_deal_flow.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 自動売買 フェーズ2：案件のフロー種別（受注可否の土台）
+-- =====================================================================
+-- 200台キャパ・枠は「自動売買のみ」の概念のため、案件が自動売買か半自動かを判別する。
+--   半自動：加盟店の仕入れオーダーから起票（order_id あり）
+--   自動  ：本部が起票（createManualDeal・order_id なし）
+-- 既存案件は order_id の有無で振り分ける（order_id あり=semi / なし=auto）。
+-- 冪等（if not exists / drop constraint）。
+-- =====================================================================
+
+alter table portal.vehicle_deals add column if not exists flow text not null default 'semi';
+alter table portal.vehicle_deals drop constraint if exists vehicle_deals_flow_check;
+alter table portal.vehicle_deals add constraint vehicle_deals_flow_check check (flow in ('semi', 'auto'));
+
+comment on column portal.vehicle_deals.flow is '案件のフロー種別。semi=半自動（オーダー起票）/ auto=自動売買（本部起票）。200台キャパ・枠は auto のみが対象';
+
+-- 既存案件の振り分け：オーダー由来=semi、本部起票=auto
+update portal.vehicle_deals set flow = 'semi' where order_id is not null;
+update portal.vehicle_deals set flow = 'auto' where order_id is null;
+
+-- 稼働台数集計用インデックス（auto かつ 稼働中）
+create index if not exists idx_vehicle_deals_flow_status on portal.vehicle_deals(flow, status);
+
+
+-- #####################################################################
+-- ## 038_auto_reservations.sql
+-- #####################################################################
+-- =====================================================================
+-- Carbey Portal — 自動売買 フェーズ4：受注待ち（予約）
+-- =====================================================================
+-- 確定ルール（docs/auto-trading-slots-design.md）:
+--   キャパ超過時は「受注待ち（予約）」に入る。割当順は申込が早い順（先着）だが、
+--   本部が手動で順番を入れ替え可能（運転資金の都合で先送りするため）。
+--   清算で枠が空いたら、予約列の先頭（本部が並べた順）へ割り当てる。
+--
+--   auto_reservations:
+--     status = 'waiting'(受注待ち) / 'assigned'(割当済み=起票へ) / 'cancelled'(取消)
+--     sort_order = 本部の手動並替キー（小さいほど先。既定は申込順）
+-- 冪等（if not exists）。
+-- =====================================================================
+
+create table if not exists portal.auto_reservations (
+  id           uuid primary key default gen_random_uuid(),
+  member_id    uuid not null references portal.members(id) on delete cascade,
+  status       text not null default 'waiting'
+                 check (status in ('waiting', 'assigned', 'cancelled')),
+  sort_order   int not null default 0,      -- 本部の手動並替（小さいほど先）
+  requested_at timestamptz not null default now(),
+  assigned_at  timestamptz,
+  note         text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create index if not exists idx_auto_reservations_waiting
+  on portal.auto_reservations(status, sort_order, requested_at);
+create index if not exists idx_auto_reservations_member
+  on portal.auto_reservations(member_id);
+
+drop trigger if exists trg_auto_reservations_touch on portal.auto_reservations;
+create trigger trg_auto_reservations_touch
+  before update on portal.auto_reservations
+  for each row execute function portal.touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- RLS：本部は全件、加盟店は自分の予約を閲覧。編集は本部（can_crm）。
+-- ---------------------------------------------------------------------
+alter table portal.auto_reservations enable row level security;
+
+drop policy if exists portal_auto_reservations_read on portal.auto_reservations;
+create policy portal_auto_reservations_read on portal.auto_reservations
+  for select using (portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid()));
+
+drop policy if exists portal_auto_reservations_write on portal.auto_reservations;
+create policy portal_auto_reservations_write on portal.auto_reservations
+  for all using (portal.can_crm(auth.uid())) with check (portal.can_crm(auth.uid()));
+
+grant select on portal.auto_reservations to authenticated;
+grant insert, update, delete on portal.auto_reservations to authenticated;
+grant all on portal.auto_reservations to service_role;
+
+
+-- #####################################################################
+-- ## 039_slot_purchase.sql
+-- =====================================================================
+-- Carbey Portal — 自動売買 フェーズ5：枠購入の清算連携
+-- =====================================================================
+-- 確定ルール：1枠=10万円。入金消込が完了（invoices.status='paid'）したら
+--   members.auto_slots を購入枠数だけ自動加算（最大10）。
+--   請求・消込は既存の invoices（kind='slot_fee'）＋自動集計トリガを活用する。
+--
+--   invoices に slot_count（購入枠数）と slots_applied（加算済みフラグ・冪等化）を追加し、
+--   paid になった時点で1回だけ加算する。
+-- 冪等（if not exists / create or replace）。
+-- =====================================================================
+
+alter table portal.invoices add column if not exists slot_count    int;                    -- 購入枠数（slot_fee のみ）
+alter table portal.invoices add column if not exists slots_applied boolean not null default false; -- 枠加算済み
+
+comment on column portal.invoices.slot_count is '枠購入の枠数（kind=slot_fee）。paid で members.auto_slots に加算';
+comment on column portal.invoices.slots_applied is '枠加算済みフラグ（二重加算防止）';
+
+-- ---------------------------------------------------------------------
+-- 消込完了（paid）で枠を自動加算するトリガ
+--   kind=slot_fee かつ status=paid かつ未加算 かつ slot_count>0 のとき、
+--   members.auto_slots += slot_count（最大10）し、slots_applied=true にする。
+--   AFTER UPDATE。自身の slots_applied 更新で再発火しても未加算条件で停止（無限ループなし）。
+-- ---------------------------------------------------------------------
+create or replace function portal.apply_slot_purchase()
+returns trigger language plpgsql security definer set search_path = portal as $$
+begin
+  if new.kind = 'slot_fee'
+     and new.status = 'paid'
+     and coalesce(new.slots_applied, false) = false
+     and coalesce(new.slot_count, 0) > 0 then
+    update portal.members
+       set auto_slots = least(10, auto_slots + new.slot_count)
+     where id = new.member_id;
+    update portal.invoices set slots_applied = true where id = new.id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_invoices_apply_slots on portal.invoices;
+create trigger trg_invoices_apply_slots
+  after update on portal.invoices
+  for each row execute function portal.apply_slot_purchase();
+
+
+-- ## 040_mgmt_fee_settlement.sql
+-- =====================================================================
+-- Carbey Portal — 自動売買 フェーズ6：月額管理手数料の経過精算
+-- =====================================================================
+-- 確定ルール（クライアント確認 2026-07-21）：
+--   自動売買（flow='auto'）の車両を清算（売却=sold）した時点で、
+--   運用開始（仕入れ中 sourcing_at）〜清算（sold_at）の【満了月数】を数え、
+--   手数料 = 満了月数 × プランの mgmt_fee_monthly_yen を
+--   預かり金（ledger_entries）から差し引く（kind='mgmt_fee'）。
+--   端数月は課金しない（満了月のみ・最短0か月）。履歴を可視化する。
+--
+--   ・ledger_entries.kind に 'mgmt_fee' を追加（符号は－：出金系）。
+--   ・vehicle_deals に mgmt_fee_yen / mgmt_fee_months を保持（可視化＋二重課金防止）。
+-- 冪等（if exists / if not exists）。
+-- =====================================================================
+
+-- ledger_entries.kind に mgmt_fee を追加 -----------------------------------
+alter table portal.ledger_entries drop constraint if exists ledger_entries_kind_check;
+alter table portal.ledger_entries
+  add constraint ledger_entries_kind_check
+  check (kind in ('deposit', 'withdraw', 'settlement', 'adjust', 'mgmt_fee'));
+
+-- vehicle_deals に管理手数料の記録列 --------------------------------------
+alter table portal.vehicle_deals add column if not exists mgmt_fee_yen    int; -- 清算時に差し引いた月額管理手数料（可視化＋冪等）
+alter table portal.vehicle_deals add column if not exists mgmt_fee_months int; -- 手数料算出に使った満了月数
+
+comment on column portal.vehicle_deals.mgmt_fee_yen is '清算時に預かり金から差し引いた月額管理手数料（自動売買）。NULL=未課金';
+comment on column portal.vehicle_deals.mgmt_fee_months is '月額管理手数料の算出に用いた満了月数（運用開始〜清算）';
+
+
+-- ## 041_member_budget_alloc.sql
+-- =====================================================================
+-- Carbey Portal — 自動売買 フェーズ7：予算振り分け（両フロー保有者）
+-- =====================================================================
+-- 確定ルール（docs/auto-trading-slots-design.md 3-4）:
+--   自動売買・半自動の両方の権限を持つ加盟者は、預かり金（member_ledger）を
+--   「自動売買用」「半自動用」に自分で振り分けられる。
+--   受注/精算の残高判定は、各フローの割当額に対して行う（既定はフロー全体プール）。
+--   片方フローのみの加盟者は全額そのフローに割当（振り分けは両フロー保有者のみ）。
+--
+--   member_budget_alloc（加盟者ごと1行）:
+--     auto_allocated_yen … 自動売買用に割り当てた預かり金
+--     semi_allocated_yen … 半自動用に割り当てた預かり金
+--     （設定時点の預かり残高を2フローへ分割。行が無い＝未設定＝各フロー全額判定）
+-- 冪等（if not exists）。
+-- =====================================================================
+
+create table if not exists portal.member_budget_alloc (
+  member_id          uuid primary key references portal.members(id) on delete cascade,
+  auto_allocated_yen bigint not null default 0,  -- 自動売買用の割当
+  semi_allocated_yen bigint not null default 0,  -- 半自動用の割当
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
+drop trigger if exists trg_member_budget_alloc_touch on portal.member_budget_alloc;
+create trigger trg_member_budget_alloc_touch
+  before update on portal.member_budget_alloc
+  for each row execute function portal.touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- RLS：本部は全件、加盟店は自分の割当を閲覧・操作（自分で振り分けるため）。
+-- ---------------------------------------------------------------------
+alter table portal.member_budget_alloc enable row level security;
+
+drop policy if exists portal_member_budget_alloc_read on portal.member_budget_alloc;
+create policy portal_member_budget_alloc_read on portal.member_budget_alloc
+  for select using (portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid()));
+
+drop policy if exists portal_member_budget_alloc_write on portal.member_budget_alloc;
+create policy portal_member_budget_alloc_write on portal.member_budget_alloc
+  for all using (portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid()))
+  with check (portal.is_staff(auth.uid()) or member_id = portal.current_member_id(auth.uid()));
+
+grant select, insert, update, delete on portal.member_budget_alloc to authenticated;
+grant all on portal.member_budget_alloc to service_role;
+
+
 -- ## 仕上げ: PostgREST スキーマキャッシュを再読込
 -- #####################################################################
 notify pgrst, 'reload schema';

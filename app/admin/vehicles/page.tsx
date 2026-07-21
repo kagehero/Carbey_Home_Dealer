@@ -22,7 +22,7 @@ const COLUMNS: { key: DealStatusStage; icon: typeof Package; tone: string }[] = 
 export default async function AdminVehiclesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ member?: string }>
+  searchParams: Promise<{ member?: string; error?: string; created?: string }>
 }) {
   await requireFeature('reports')
   const sp = await searchParams
@@ -51,6 +51,13 @@ export default async function AdminVehiclesPage({
           仕入れ〜売却までの車両を、ステージ別に一元管理します（半自動＝オーダーから自動起票／全自動＝本部が起票）。
         </p>
       </div>
+
+      {sp.created && (
+        <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">車両を起票しました（仕入れ中）。</div>
+      )}
+      {sp.error && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">起票できませんでした：{sp.error}</div>
+      )}
 
       {/* 全自動：車両の起票 */}
       <Card>

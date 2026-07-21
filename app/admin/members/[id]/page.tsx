@@ -19,7 +19,7 @@ import { updateMemberAction, issueCredentialsAction } from '../actions'
 import { reviewEvidenceAction } from '../evidence-actions'
 import { confirmSelfAction, setAdminStepAction } from '../funding-actions'
 import { addLedgerEntryAction, deleteLedgerEntryAction } from '../ledger-actions'
-import { createInvoiceAction, recordPaymentAction, markBilledAction, cancelInvoiceAction, deleteInvoiceAction } from '../billing-actions'
+import { createInvoiceAction, createSlotPurchaseAction, recordPaymentAction, markBilledAction, cancelInvoiceAction, deleteInvoiceAction } from '../billing-actions'
 import MemberFormFields from '../MemberFormFields'
 
 const INVOICE_STATUS_TONE: Record<string, string> = {
@@ -36,6 +36,7 @@ const LEDGER_KIND_LABEL: Record<string, string> = {
   withdraw: '出金',
   settlement: '取引精算',
   adjust: '調整',
+  mgmt_fee: '月額管理手数料',
 }
 
 export const dynamic = 'force-dynamic'
@@ -145,6 +146,9 @@ export default async function MemberDetailPage({
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           契約ステータスを「稼働中（active）」にするには、運用方式の権限（セミオート／フルオート／両方）を1つ以上割り当ててください。
         </div>
+      )}
+      {sp.error && !['contract_date_required', 'email_duplicate', 'plan_required', 'grant_required'].includes(sp.error) && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{sp.error}</div>
       )}
 
       {/* ===== ログイン発行（本部が直接パスワードを発行する発行型フロー） ===== */}
@@ -583,6 +587,46 @@ export default async function MemberDetailPage({
             )}
           </div>
         </div>
+
+        {/* 自動売買の枠購入（1枠=10万円）— 消込完了で auto_slots が自動加算される（⑦フェーズ5） */}
+        {member.grant_auto && (() => {
+          const currentSlots = member.auto_slots ?? 0
+          const remainingSlots = Math.max(0, 10 - currentSlots)
+          return (
+            <form action={createSlotPurchaseAction} className="mb-4 rounded-xl border border-brand-200 bg-brand-50/60 p-4">
+              <input type="hidden" name="member_id" value={member.id} />
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-900">販売可能枠を購入</span>
+                <span className="text-xs text-slate-500">1枠=100,000円／保有 {currentSlots} 枠・上限10枠</span>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">購入枠数 *</label>
+                  <input
+                    name="slot_count"
+                    type="number"
+                    min={1}
+                    max={remainingSlots || 1}
+                    defaultValue={remainingSlots > 0 ? 1 : ''}
+                    disabled={remainingSlots === 0}
+                    className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                  />
+                </div>
+                <button
+                  disabled={remainingSlots === 0}
+                  className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                >
+                  枠購入を請求
+                </button>
+                <p className="text-xs text-slate-500">
+                  {remainingSlots === 0
+                    ? '既に上限（10枠）に達しています。'
+                    : '請求を発行し、入金消込が完了すると自動的に枠が付与されます。'}
+                </p>
+              </div>
+            </form>
+          )
+        })()}
 
         {/* 請求を作成 */}
         <form action={createInvoiceAction} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">

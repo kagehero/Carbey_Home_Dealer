@@ -19,6 +19,8 @@ export default async function PortalLayout({ children }: { children: React.React
     { href: '/portal/dashboard', label: 'ダッシュボード', icon: 'dashboard' },
     { href: '/portal/vehicles', label: '車両管理', icon: 'vehicle', soon: true },
     { href: '/portal/orders', label: 'オーダー管理', icon: 'order' },
+    // 自動売買（フェーズ8）：権限を持つ加盟者のみ表示
+    ...(member?.grant_auto ? [{ href: '/portal/auto', label: '自動売買', icon: 'auto' as const }] : []),
     { href: '/portal/training', label: 'トレーニング', icon: 'training' },
     { href: '/portal/ai', label: 'AI分析・相場', icon: 'ai', soon: true },
     { href: '/portal/reports', label: 'レポート', icon: 'report' },

@@ -151,6 +151,20 @@ export default function MemberFormFields({
             </span>
           </span>
         </label>
+
+        {/* ⑦ 自動売買の枠：保有枠数・1枠あたり運用資金（本部が加盟者ごとに設定） */}
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className={label}>自動売買 保有枠数<span className="ml-1 text-xs font-normal text-slate-400">（最大10）</span></label>
+            <input name="auto_slots" type="number" min="0" max="10" defaultValue={member ? member.auto_slots : 0} className={field} />
+            <p className="mt-1 text-xs text-slate-500">プラン既定＋購入分＋本部調整。同時に運用できる車両数の上限。</p>
+          </div>
+          <div>
+            <label className={label}>1枠あたり運用資金 (円)</label>
+            <input name="capital_per_slot_yen" type="number" min="0" step="100000" defaultValue={member ? member.capital_per_slot_yen : 4000000} className={field} />
+            <p className="mt-1 text-xs text-slate-500">既定400万。預かり金でまかなえる枠数の判定に使用（不足分は受注不可）。</p>
+          </div>
+        </div>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">

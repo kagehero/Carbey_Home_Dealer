@@ -20,19 +20,26 @@ function revalidateDeal(dealId: string) {
   revalidatePath('/admin/vehicles')
 }
 
-/** 本部が全自動フローの車両案件を起票する。 */
+/** 本部が全自動フローの車両案件を起票する。受注可否（枠・キャパ・運用資金）を判定してブロック。 */
 export async function createDealAction(formData: FormData) {
   await requireFeature('reports')
   const memberId = String(formData.get('member_id') ?? '')
   if (!memberId) return
-  await createManualDeal({
-    memberId,
-    maker: String(formData.get('maker') ?? '').trim() || null,
-    carModel: String(formData.get('car_model') ?? '').trim() || null,
-    year: String(formData.get('year') ?? '').trim() || null,
-    orderAmountYen: num(formData.get('order_amount')) || null,
-  })
+  try {
+    await createManualDeal({
+      memberId,
+      maker: String(formData.get('maker') ?? '').trim() || null,
+      carModel: String(formData.get('car_model') ?? '').trim() || null,
+      year: String(formData.get('year') ?? '').trim() || null,
+      orderAmountYen: num(formData.get('order_amount')) || null,
+    })
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e
+    const msg = e instanceof Error ? e.message : '起票に失敗しました'
+    redirect(`/admin/vehicles?error=${encodeURIComponent(msg)}`)
+  }
   revalidatePath('/admin/vehicles')
+  redirect('/admin/vehicles?created=1')
 }
 
 /** 商品化中へ。 */

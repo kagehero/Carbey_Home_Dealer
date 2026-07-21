@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/admin'
+import { MAX_SLOTS, SLOT_PRICE_YEN } from '@/lib/portal/auto-trading'
 import type { InvoiceRow, InvoiceKind, InvoiceStatus, PaymentRow } from '@/types/database'
 
 /**
@@ -88,6 +89,34 @@ export async function createInvoice(input: {
     note: input.note ?? null,
     status: input.requested ? 'billed' : 'unbilled',
     billed_at: input.requested ? new Date().toISOString() : null,
+  } as never)
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * 枠購入の請求を発行する（⑦フェーズ5）。1枠=10万円。
+ * 入金消込が完了（paid）すると、DBトリガで members.auto_slots が自動加算される（最大10）。
+ * 購入後に上限(10)を超える枠数は受け付けない。
+ */
+export async function createSlotPurchaseInvoice(input: { memberId: string; slotCount: number; dueDate?: string | null }): Promise<void> {
+  if (input.slotCount <= 0) throw new Error('購入枠数を入力してください。')
+  const supabase = createServiceRoleClient()
+  const { data: member } = await supabase.from('members').select('auto_slots').eq('id', input.memberId).maybeSingle<{ auto_slots: number }>()
+  const current = member?.auto_slots ?? 0
+  if (current + input.slotCount > MAX_SLOTS) {
+    throw new Error(`枠は1加盟者あたり最大${MAX_SLOTS}枠までです（現在${current}枠・購入${input.slotCount}枠は上限超過）。`)
+  }
+  const amount = input.slotCount * SLOT_PRICE_YEN
+  const { error } = await supabase.from('invoices').insert({
+    member_id: input.memberId,
+    kind: 'slot_fee',
+    title: `販売可能枠 ${input.slotCount}枠の購入`,
+    amount_yen: amount,
+    slot_count: input.slotCount,
+    due_date: input.dueDate ?? null,
+    status: 'billed',
+    billed_at: new Date().toISOString(),
+    note: `枠購入（${SLOT_PRICE_YEN.toLocaleString()}円 × ${input.slotCount}枠）。入金消込で自動的に枠が付与されます。`,
   } as never)
   if (error) throw new Error(error.message)
 }

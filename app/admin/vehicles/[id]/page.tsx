@@ -172,20 +172,36 @@ export default async function AdminDealDetailPage({
                 <div><dt className="text-xs text-slate-500">費用合計</dt><dd className="font-semibold text-slate-900">{yen(deal.cost_total_yen)}</dd></div>
                 <div><dt className="text-xs text-slate-500">粗利益</dt><dd className={`font-semibold ${(deal.gross_profit_yen ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{yen(deal.gross_profit_yen)}</dd></div>
                 <div><dt className="text-xs text-slate-500">売却日</dt><dd className="font-semibold text-slate-900">{deal.sold_at ? new Date(deal.sold_at).toLocaleDateString('ja-JP') : '—'}</dd></div>
+                {deal.flow === 'auto' && deal.mgmt_fee_yen != null && (
+                  <div className="col-span-2 sm:col-span-4 border-t border-slate-100 pt-2">
+                    <dt className="text-xs text-slate-500">月額管理手数料（清算時に預かり金から差引）</dt>
+                    <dd className="font-semibold text-amber-700">
+                      {yen(deal.mgmt_fee_yen)}
+                      <span className="ml-1 text-xs font-normal text-slate-500">（満了 {deal.mgmt_fee_months ?? 0} か月分）</span>
+                    </dd>
+                  </div>
+                )}
               </dl>
             ) : (
-              <form action={recordSaleAction} className="flex flex-wrap items-end gap-2">
-                <input type="hidden" name="deal_id" value={deal.id} />
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">販売価格（円）*</label>
-                  <input name="sale_price" required inputMode="numeric" placeholder="1500000" className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">売却日</label>
-                  <input type="date" name="sold_at" className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600" />
-                </div>
-                <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">売却を記録</button>
-              </form>
+              <>
+                <form action={recordSaleAction} className="flex flex-wrap items-end gap-2">
+                  <input type="hidden" name="deal_id" value={deal.id} />
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">販売価格（円）*</label>
+                    <input name="sale_price" required inputMode="numeric" placeholder="1500000" className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">売却日</label>
+                    <input type="date" name="sold_at" className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600" />
+                  </div>
+                  <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">売却を記録</button>
+                </form>
+                {deal.flow === 'auto' && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    自動売買では、清算（売却の記録）時に月額管理手数料（運用開始〜清算の満了月数 × プランの月額）が預かり金から自動で差し引かれます。
+                  </p>
+                )}
+              </>
             )}
           </CardBody>
         </Card>
