@@ -92,6 +92,12 @@ export type MemberRow = {
   mgmt_fee_anchor: string | null
   /** 月額管理手数料の課金済み満了月数（migration 043・二重課金防止） */
   mgmt_fee_billed_months: number
+  // 出金の振込先（migration 044）
+  bank_name: string | null
+  bank_branch: string | null
+  bank_account_type: string | null
+  bank_account_number: string | null
+  bank_account_holder: string | null
   joining_fee_yen: number | null
   monthly_fee_yen: number | null
   working_capital_yen: number | null
@@ -126,6 +132,11 @@ export type MemberInsert = {
   capital_per_slot_yen?: number
   mgmt_fee_anchor?: string | null
   mgmt_fee_billed_months?: number
+  bank_name?: string | null
+  bank_branch?: string | null
+  bank_account_type?: string | null
+  bank_account_number?: string | null
+  bank_account_holder?: string | null
   joining_fee_yen?: number | null
   monthly_fee_yen?: number | null
   working_capital_yen?: number | null
@@ -547,6 +558,34 @@ export type MemberBudgetAllocRow = {
   updated_at: string
 }
 
+/** 出金申請のステータス（migration 044）。 */
+export type WithdrawalStatus = 'requested' | 'approved' | 'paid' | 'rejected' | 'cancelled'
+
+/** 運転資金の出金申請（migration 044）。 */
+export type WithdrawalRequestRow = {
+  id: string
+  member_id: string
+  status: WithdrawalStatus
+  amount_yen: number // 申請額（預かり金から減算する額）
+  fee_yen: number    // 出金手数料
+  net_yen: number    // 実際の振込額（= amount_yen − fee_yen）
+  bank_name: string | null
+  bank_branch: string | null
+  bank_account_type: string | null
+  bank_account_number: string | null
+  bank_account_holder: string | null
+  requested_at: string
+  due_date: string | null
+  approved_at: string | null
+  approved_by: string | null
+  paid_at: string | null
+  paid_by: string | null
+  reject_reason: string | null
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
 /** 月額管理手数料の月次課金 実行履歴（migration 043）。 */
 export type MemberMgmtFeeRunRow = {
   id: string
@@ -571,6 +610,7 @@ export type Database = {
       auto_reservations: { Row: AutoReservationRow; Insert: Partial<AutoReservationRow>; Update: Partial<AutoReservationRow> }
       member_budget_alloc: { Row: MemberBudgetAllocRow; Insert: Partial<MemberBudgetAllocRow>; Update: Partial<MemberBudgetAllocRow> }
       member_mgmt_fee_runs: { Row: MemberMgmtFeeRunRow; Insert: Partial<MemberMgmtFeeRunRow>; Update: Partial<MemberMgmtFeeRunRow> }
+      withdrawal_requests: { Row: WithdrawalRequestRow; Insert: Partial<WithdrawalRequestRow>; Update: Partial<WithdrawalRequestRow> }
       users: { Row: PortalUserRow; Insert: Partial<PortalUserRow>; Update: Partial<PortalUserRow> }
       members: { Row: MemberRow; Insert: MemberInsert; Update: Partial<MemberInsert> }
       payments: { Row: PaymentRow; Insert: Partial<PaymentRow>; Update: Partial<PaymentRow> }

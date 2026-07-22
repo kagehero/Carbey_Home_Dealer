@@ -23,6 +23,7 @@ export default async function PortalLayout({ children }: { children: React.React
     ...(member?.grant_auto ? [{ href: '/portal/auto', label: '自動売買', icon: 'auto' as const }] : []),
     { href: '/portal/training', label: 'トレーニング', icon: 'training' },
     { href: '/portal/ai', label: 'AI分析・相場', icon: 'ai', soon: true },
+    { href: '/portal/withdrawal', label: '出金申請', icon: 'withdrawal' },
     { href: '/portal/reports', label: 'レポート', icon: 'report' },
     { href: '/portal/chat', label: 'チャット', icon: 'chat' },
     { href: '/portal/announcements', label: 'お知らせ', icon: 'announce', badge: unread },

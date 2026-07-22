@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   Home, LayoutDashboard, Car, ClipboardList, LineChart, FileBarChart,
-  MessageSquare, Bell, Settings, ScrollText, Menu, X, GraduationCap, Bot,
+  MessageSquare, Bell, Settings, ScrollText, Menu, X, GraduationCap, Bot, Banknote,
 } from 'lucide-react'
 import Logo from '@/components/Logo'
 import { cn } from '@/lib/cn'
@@ -16,6 +16,7 @@ const ICONS = {
   vehicle: Car,
   order: ClipboardList,
   auto: Bot,
+  withdrawal: Banknote,
   ai: LineChart,
   report: FileBarChart,
   chat: MessageSquare,

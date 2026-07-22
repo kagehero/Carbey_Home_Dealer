@@ -21,6 +21,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     primary.push({ href: '/admin/billing', label: '請求・入金管理', icon: 'billing', soon: true })
     primary.push({ href: '/admin/funds', label: '資金管理', icon: 'billing' })
     primary.push({ href: '/admin/onboarding', label: 'オンボーディング管理', icon: 'onboarding' })
+    primary.push({ href: '/admin/withdrawals', label: '出金申請管理', icon: 'billing' })
   }
   primary.push({ href: '/admin/vehicles', label: '車両進捗管理', icon: 'vehicle' })
   primary.push({ href: '/admin/auto-capacity', label: '自動売買 キャパ管理', icon: 'gauge' })
