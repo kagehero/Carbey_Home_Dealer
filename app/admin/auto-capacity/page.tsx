@@ -5,18 +5,21 @@ import { getGlobalAutoCapacity, getAutoSettings, listAutoMembers, listWaitingRes
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { yen } from '@/lib/portal/labels'
-import { updateAutoSettingsAction, moveReservationAction, cancelReservationAction, assignReservationAction, runAllMgmtFeeAction } from './actions'
+import { getMgmtFeeUnit, getConsumptionTaxPct } from '@/lib/portal/mgmt-fee'
+import { updateAutoSettingsAction, updateMgmtFeeSettingsAction, moveReservationAction, cancelReservationAction, assignReservationAction, runAllMgmtFeeAction } from './actions'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AutoCapacityPage({ searchParams }: { searchParams: Promise<{ msg?: string }> }) {
   await requireFeature('reports')
   const sp = await searchParams
-  const [global, settings, members, reservations] = await Promise.all([
+  const [global, settings, members, reservations, feeUnit, taxPct] = await Promise.all([
     getGlobalAutoCapacity(),
     getAutoSettings(),
     listAutoMembers(),
     listWaitingReservations(),
+    getMgmtFeeUnit(),
+    getConsumptionTaxPct(),
   ])
   const usagePct = global.total > 0 ? Math.round((global.active / global.total) * 100) : 0
 
@@ -177,6 +180,29 @@ export default async function AutoCapacityPage({ searchParams }: { searchParams:
             </div>
             <button className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">保存</button>
           </form>
+        </CardBody>
+      </Card>
+
+      {/* 月額管理手数料の設定（1枠単価・消費税率） */}
+      <Card>
+        <CardHeader title="月額管理手数料の設定" />
+        <CardBody>
+          <form action={updateMgmtFeeSettingsAction} className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">1枠あたり単価（円・税抜）</label>
+              <input name="mgmt_fee_per_slot_yen" type="number" min="0" step="10000" defaultValue={feeUnit} className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <p className="mt-1 text-[11px] text-slate-400">月額 =（保有枠数 − 1）× 単価（既定10万）。</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">消費税率（％）</label>
+              <input name="consumption_tax_pct" type="number" min="0" max="100" defaultValue={taxPct} className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <p className="mt-1 text-[11px] text-slate-400">税抜額に加算（法改正時に変更）。</p>
+            </div>
+            <button className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">保存</button>
+          </form>
+          <p className="mt-3 text-[11px] text-slate-500">
+            例）3枠 → 税抜 {yen(2 * feeUnit)} ＋ 消費税{taxPct}% {yen(Math.floor(2 * feeUnit * taxPct / 100))} ＝ <span className="font-medium text-slate-700">税込 {yen(2 * feeUnit + Math.floor(2 * feeUnit * taxPct / 100))}</span> / 月
+          </p>
         </CardBody>
       </Card>
     </div>

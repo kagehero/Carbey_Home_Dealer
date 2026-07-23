@@ -15,6 +15,7 @@ import type { MemberMgmtFeeRunRow } from '@/types/database'
  */
 
 export const MGMT_FEE_DEFAULT_UNIT = 100_000
+export const DEFAULT_TAX_PCT = 10
 
 /** 1枠あたり単価（system_settings。未設定は既定10万）。 */
 export async function getMgmtFeeUnit(): Promise<number> {
@@ -23,7 +24,26 @@ export async function getMgmtFeeUnit(): Promise<number> {
   return data?.value_int ?? MGMT_FEE_DEFAULT_UNIT
 }
 
-/** 枠数と単価から月額を算出。=（枠数−1）×単価（下限0）。 */
+/** 消費税率（％。system_settings。未設定は既定10）。本部が変更可。 */
+export async function getConsumptionTaxPct(): Promise<number> {
+  const supabase = createServiceRoleClient()
+  const { data } = await supabase.from('system_settings').select('value_int').eq('key', 'consumption_tax_pct').maybeSingle<{ value_int: number | null }>()
+  return data?.value_int ?? DEFAULT_TAX_PCT
+}
+
+/** 消費税額（税抜額 × 税率／％、円未満切り捨て）。 */
+export function taxOf(exclYen: number, taxPct: number): number {
+  return Math.floor((exclYen * taxPct) / 100)
+}
+
+/** 月額管理手数料の設定（1枠単価・消費税率）を更新する（本部）。 */
+export async function setMgmtFeeSetting(key: 'mgmt_fee_per_slot_yen' | 'consumption_tax_pct', value: number): Promise<void> {
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase.from('system_settings').upsert({ key, value_int: Math.max(0, Math.round(value)) } as never, { onConflict: 'key' })
+  if (error) throw new Error(error.message)
+}
+
+/** 枠数と単価から月額（税抜）を算出。=（枠数−1）×単価（下限0）。 */
 export function monthlyMgmtFee(slots: number, unit: number): number {
   return Math.max(0, slots - 1) * unit
 }
@@ -53,28 +73,41 @@ export type MgmtFeePreview = {
   eligible: boolean       // 上位プランの自動売買加盟者か
   slots: number
   unit: number
-  monthlyFee: number      // 当月の月額（=(枠数-1)×単価）
+  taxPct: number          // 適用消費税率（％）
+  monthlyFee: number      // 当月の月額（税抜。=(枠数-1)×単価）
+  monthlyTax: number      // 当月の消費税額
+  monthlyFeeIncl: number  // 当月の月額（税込）
   anchor: string | null
   billedMonths: number    // 課金済み満了月数
   dueMonths: number       // 今回課金できる満了月数（未課金の満了月）
-  dueGross: number        // 今回の請求総額（monthlyFee × dueMonths）
+  dueGross: number        // 今回の請求（税抜。monthlyFee × dueMonths）
+  dueTax: number          // 今回の消費税額
+  dueGrossIncl: number    // 今回の請求（税込）
   balance: number         // 現在の預かり金残高
 }
 
 /** 会員の月額管理手数料プレビュー（本部の月次実行・加盟店表示の両方に使う）。 */
 export async function getMgmtFeePreview(memberId: string, unitOverride?: number): Promise<MgmtFeePreview> {
   const m = await fetchMemberFee(memberId)
-  const unit = unitOverride ?? (await getMgmtFeeUnit())
+  const [unit, taxPct] = await Promise.all([unitOverride ? Promise.resolve(unitOverride) : getMgmtFeeUnit(), getConsumptionTaxPct()])
   const slots = m?.auto_slots ?? 0
   const planDefault = m?.plan?.default_auto_slots ?? 0
   const eligible = !!m?.grant_auto && planDefault >= 2
   const monthlyFee = eligible ? monthlyMgmtFee(slots, unit) : 0
+  const monthlyTax = taxOf(monthlyFee, taxPct)
   const anchor = m?.mgmt_fee_anchor ?? null
   const billedMonths = m?.mgmt_fee_billed_months ?? 0
   const total = anchor ? completedMonths(anchor + 'T00:00:00Z', new Date().toISOString()) : 0
   const dueMonths = Math.max(0, total - billedMonths)
+  const dueGross = monthlyFee * dueMonths
+  const dueTax = taxOf(dueGross, taxPct)
   const balance = await getLedgerBalance(memberId)
-  return { memberId, eligible, slots, unit, monthlyFee, anchor, billedMonths, dueMonths, dueGross: monthlyFee * dueMonths, balance }
+  return {
+    memberId, eligible, slots, unit, taxPct,
+    monthlyFee, monthlyTax, monthlyFeeIncl: monthlyFee + monthlyTax,
+    anchor, billedMonths, dueMonths,
+    dueGross, dueTax, dueGrossIncl: dueGross + dueTax, balance,
+  }
 }
 
 export type MgmtFeeRunResult = {
@@ -82,7 +115,9 @@ export type MgmtFeeRunResult = {
   memberName: string
   charged: boolean
   months: number
-  gross: number
+  grossExcl: number // 税抜
+  tax: number       // 消費税額
+  gross: number     // 税込（＝実際に相殺／請求した総額）
   fromDeposit: number
   shortfall: number
   invoiceId: string | null
@@ -97,7 +132,7 @@ export type MgmtFeeRunResult = {
 export async function runMonthlyMgmtFee(memberId: string, ranBy: string | null): Promise<MgmtFeeRunResult> {
   const supabase = createServiceRoleClient()
   const m = await fetchMemberFee(memberId)
-  const base = { memberId, memberName: m?.member_name ?? '', charged: false, months: 0, gross: 0, fromDeposit: 0, shortfall: 0, invoiceId: null as string | null }
+  const base = { memberId, memberName: m?.member_name ?? '', charged: false, months: 0, grossExcl: 0, tax: 0, gross: 0, fromDeposit: 0, shortfall: 0, invoiceId: null as string | null }
   if (!m) return { ...base, skippedReason: '会員が見つかりません' }
 
   const planDefault = m.plan?.default_auto_slots ?? 0
@@ -109,7 +144,7 @@ export async function runMonthlyMgmtFee(memberId: string, ranBy: string | null):
     return { ...base, skippedReason: '起算日を当日で設定しました（次回から課金）' }
   }
 
-  const unit = await getMgmtFeeUnit()
+  const [unit, taxPct] = await Promise.all([getMgmtFeeUnit(), getConsumptionTaxPct()])
   const monthlyFee = monthlyMgmtFee(m.auto_slots, unit)
   if (monthlyFee <= 0) return { ...base, skippedReason: '月額0円（枠数1以下）' }
 
@@ -117,11 +152,13 @@ export async function runMonthlyMgmtFee(memberId: string, ranBy: string | null):
   const dueMonths = Math.max(0, total - m.mgmt_fee_billed_months)
   if (dueMonths <= 0) return { ...base, skippedReason: '今月分は未到来（満了月なし）' }
 
-  const gross = monthlyFee * dueMonths
+  const grossExcl = monthlyFee * dueMonths
+  const tax = taxOf(grossExcl, taxPct)
+  const gross = grossExcl + tax // 税込
   const balance = await getLedgerBalance(memberId)
   const fromDeposit = Math.min(gross, Math.max(0, balance))
   const shortfall = gross - fromDeposit
-  const label = `月額管理手数料 ${dueMonths}か月分（${m.auto_slots}枠 → 月額${monthlyFee.toLocaleString()}円）`
+  const label = `月額管理手数料 ${dueMonths}か月分（${m.auto_slots}枠 → 月額${monthlyFee.toLocaleString()}円）税抜${grossExcl.toLocaleString()}円＋消費税${tax.toLocaleString()}円（${taxPct}%）＝税込${gross.toLocaleString()}円`
 
   // 預かり金から可能分を相殺
   if (fromDeposit > 0) {
@@ -153,15 +190,16 @@ export async function runMonthlyMgmtFee(memberId: string, ranBy: string | null):
     )
   }
 
-  // 実行履歴 + 課金済み月数を前進
+  // 実行履歴 + 課金済み月数を前進（gross_yen は税抜。差引総額 = gross_yen + tax_yen）
   await supabase.from('member_mgmt_fee_runs').insert({
     member_id: memberId, months: dueMonths, slots: m.auto_slots, unit_yen: unit,
-    gross_yen: gross, from_deposit_yen: fromDeposit, invoiced_yen: shortfall,
+    gross_yen: grossExcl, tax_yen: tax, tax_rate_pct: taxPct,
+    from_deposit_yen: fromDeposit, invoiced_yen: shortfall,
     invoice_id: invoiceId, ran_by: ranBy, note: label,
   } as never)
   await supabase.from('members').update({ mgmt_fee_billed_months: m.mgmt_fee_billed_months + dueMonths } as never).eq('id', memberId)
 
-  return { memberId, memberName: m.member_name, charged: true, months: dueMonths, gross, fromDeposit, shortfall, invoiceId }
+  return { memberId, memberName: m.member_name, charged: true, months: dueMonths, grossExcl, tax, gross, fromDeposit, shortfall, invoiceId }
 }
 
 /** 全対象加盟者（上位プランの自動売買）に月次実行。結果配列を返す。 */

@@ -647,12 +647,15 @@ export default async function MemberDetailPage({
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-slate-900">月額管理手数料（月次）</span>
-              <span className="text-xs text-slate-500">月額 =（枠数−1）× {yen(mgmtFee.unit)} ／ 現在 {mgmtFee.slots}枠 = <span className="font-semibold text-amber-700">{yen(mgmtFee.monthlyFee)}</span>/月</span>
+              <span className="text-xs text-slate-500">
+                月額（税抜）=（枠数−1）× {yen(mgmtFee.unit)} ／ 現在 {mgmtFee.slots}枠 = <span className="font-medium text-slate-700">{yen(mgmtFee.monthlyFee)}</span>
+                ＋消費税{mgmtFee.taxPct}% {yen(mgmtFee.monthlyTax)} ＝ <span className="font-semibold text-amber-700">税込 {yen(mgmtFee.monthlyFeeIncl)}</span>/月
+              </span>
             </div>
             <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
               <div>起算日<div className="font-medium text-slate-800">{mgmtFee.anchor ?? '未設定'}</div></div>
               <div>課金済み<div className="font-medium text-slate-800">{mgmtFee.billedMonths} か月</div></div>
-              <div>今回課金可能<div className="font-medium text-slate-800">{mgmtFee.dueMonths} か月 = {yen(mgmtFee.dueGross)}</div></div>
+              <div>今回課金可能<div className="font-medium text-slate-800">{mgmtFee.dueMonths} か月 = 税込 {yen(mgmtFee.dueGrossIncl)}<span className="ml-1 text-[10px] text-slate-400">（税抜{yen(mgmtFee.dueGross)}＋税{yen(mgmtFee.dueTax)}）</span></div></div>
               <div>預かり金残高<div className="font-medium text-slate-800">{yen(mgmtFee.balance)}</div></div>
             </div>
             <form action={runMemberMgmtFeeAction} className="flex flex-wrap items-center gap-2">
@@ -667,7 +670,7 @@ export default async function MemberDetailPage({
                   <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[11px] text-slate-600">
                     <span className="text-slate-400">{new Date(r.created_at).toLocaleDateString('ja-JP')}</span>
                     <span>{r.months}か月・{r.slots}枠</span>
-                    <span>総額 {yen(r.gross_yen)}</span>
+                    <span>税込 {yen(r.gross_yen + r.tax_yen)}<span className="ml-1 text-slate-400">（税抜{yen(r.gross_yen)}＋税{yen(r.tax_yen)}）</span></span>
                     <span className="text-green-700">預かり金 {yen(r.from_deposit_yen)}</span>
                     {r.invoiced_yen > 0 && <span className="text-amber-700">請求 {yen(r.invoiced_yen)}</span>}
                   </div>

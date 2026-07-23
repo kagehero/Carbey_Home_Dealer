@@ -593,7 +593,9 @@ export type MemberMgmtFeeRunRow = {
   months: number
   slots: number
   unit_yen: number
-  gross_yen: number
+  gross_yen: number // 税抜
+  tax_yen: number // 消費税額
+  tax_rate_pct: number // 適用税率（％）
   from_deposit_yen: number
   invoiced_yen: number
   invoice_id: string | null

@@ -126,9 +126,10 @@ export default async function PortalAutoPage() {
         <div className="rounded-2xl border border-carbon-700 bg-carbon-900/60 p-5">
           <h2 className="mb-2 text-sm font-semibold text-white">月額管理手数料</h2>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-2xl font-bold text-white">{yen(mgmtFee.monthlyFee)}<span className="ml-1 text-sm font-normal text-slate-400">/月</span></span>
-            <span className="text-xs text-slate-400">（枠数 {mgmtFee.slots} − 1）× {yen(mgmtFee.unit)}</span>
+            <span className="text-2xl font-bold text-white">{yen(mgmtFee.monthlyFeeIncl)}<span className="ml-1 text-sm font-normal text-slate-400">/月（税込）</span></span>
+            <span className="text-xs text-slate-400">税抜 {yen(mgmtFee.monthlyFee)} ＋ 消費税{mgmtFee.taxPct}% {yen(mgmtFee.monthlyTax)}</span>
           </div>
+          <p className="mt-1 text-[11px] text-slate-500">（枠数 {mgmtFee.slots} − 1）× {yen(mgmtFee.unit)}（税抜）</p>
           <p className="mt-2 text-xs text-slate-500">
             毎月、預かり金（運転資金）から相殺されます。残高が不足した場合は不足分の請求（デポジットのお願い）を発行しますので、ご入金をお願いします。枠を増やすと月額も増えます。
           </p>

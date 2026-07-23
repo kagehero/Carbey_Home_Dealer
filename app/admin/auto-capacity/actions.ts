@@ -3,8 +3,19 @@
 import { revalidatePath } from 'next/cache'
 import { requireFeature } from '@/lib/auth/session'
 import { setAutoSetting, requestReservation, moveReservation, cancelReservation, markReservationAssigned } from '@/lib/portal/auto-trading'
-import { runMonthlyMgmtFeeAll } from '@/lib/portal/mgmt-fee'
+import { runMonthlyMgmtFeeAll, setMgmtFeeSetting } from '@/lib/portal/mgmt-fee'
 import { redirect } from 'next/navigation'
+
+/** 月額管理手数料の設定（1枠単価・消費税率）を更新する（本部）。 */
+export async function updateMgmtFeeSettingsAction(formData: FormData) {
+  await requireFeature('reports')
+  const unit = Number(String(formData.get('mgmt_fee_per_slot_yen') ?? '').replace(/[^\d]/g, ''))
+  const taxPct = Number(String(formData.get('consumption_tax_pct') ?? '').replace(/[^\d]/g, ''))
+  if (Number.isFinite(unit)) await setMgmtFeeSetting('mgmt_fee_per_slot_yen', unit)
+  if (Number.isFinite(taxPct)) await setMgmtFeeSetting('consumption_tax_pct', taxPct)
+  revalidatePath('/admin/auto-capacity')
+  redirect('/admin/auto-capacity?msg=' + encodeURIComponent('月額管理手数料の設定を更新しました'))
+}
 
 function num(v: FormDataEntryValue | null): number {
   return Number(String(v ?? '').replace(/[^\d]/g, ''))
